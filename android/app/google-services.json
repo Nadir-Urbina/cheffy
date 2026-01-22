@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "13788532625",
+    "project_id": "cheffy-e4f75",
+    "storage_bucket": "cheffy-e4f75.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:13788532625:android:94f4ec0bdbddaeea635430",
+        "android_client_info": {
+          "package_name": "com.example.cheffy"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "13788532625-j5fe5io38kpev86836msqd77j263cpuc.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCMfAbqe03VX0wGpQIlsUqibjVRj-UOJos"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "13788532625-j5fe5io38kpev86836msqd77j263cpuc.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
