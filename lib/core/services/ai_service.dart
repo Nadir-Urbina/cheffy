@@ -1,9 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:dart_openai/dart_openai.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:http/http.dart' as http;
 
 import '../models/recipe_model.dart';
 import '../models/user_preferences.dart';
@@ -20,20 +20,21 @@ import 'spoonacular_service.dart';
 /// 2. Safe, verified recipes from a trusted database
 class AIService {
   static const String _model = 'gpt-4o';
+  static const String _openAiBaseUrl = 'https://api.openai.com/v1';
   
   final SpoonacularService _spoonacularService = SpoonacularService();
   bool _initialized = false;
+  String? _apiKey;
 
   /// Initialize the OpenAI client
   void initialize() {
     if (_initialized) return;
     
-    final apiKey = dotenv.env['OPENAI_API_KEY'];
-    if (apiKey == null || apiKey.isEmpty || apiKey == 'your_openai_api_key_here') {
+    _apiKey = dotenv.env['OPENAI_API_KEY'];
+    if (_apiKey == null || _apiKey!.isEmpty || _apiKey == 'your_openai_api_key_here') {
       throw Exception('OpenAI API key not configured. Please add it to .env file.');
     }
     
-    OpenAI.apiKey = apiKey;
     _initialized = true;
   }
 
@@ -46,13 +47,13 @@ class AIService {
     initialize();
     
     try {
-      // Convert images to base64
-      final imageContents = <OpenAIChatCompletionChoiceMessageContentItemModel>[];
+      // Build the content array with text prompt and images
+      final contentItems = <Map<String, dynamic>>[];
       
       // Add the text prompt first
-      imageContents.add(
-        OpenAIChatCompletionChoiceMessageContentItemModel.text(
-          '''Analyze these images of a kitchen/refrigerator/pantry and identify all visible food ingredients.
+      contentItems.add({
+        'type': 'text',
+        'text': '''Analyze these images of a kitchen/refrigerator/pantry and identify all visible food ingredients.
 
 Rules:
 - List ONLY food items that can be used as cooking ingredients
@@ -69,49 +70,65 @@ Respond ONLY with a JSON object in this exact format:
   "confidence": "high" | "medium" | "low",
   "notes": "any relevant observations"
 }''',
-        ),
-      );
+      });
 
-      // Add images
+      // Add images with proper object format
       for (final image in images) {
         final bytes = await image.readAsBytes();
         final base64Image = base64Encode(bytes);
         
-        imageContents.add(
-          OpenAIChatCompletionChoiceMessageContentItemModel.imageUrl(
-            'data:image/jpeg;base64,$base64Image',
-          ),
-        );
+        contentItems.add({
+          'type': 'image_url',
+          'image_url': {
+            'url': 'data:image/jpeg;base64,$base64Image',
+            'detail': 'auto',
+          },
+        });
       }
 
-      final response = await OpenAI.instance.chat.create(
-        model: _model,
-        messages: [
-          OpenAIChatCompletionChoiceMessageModel(
-            role: OpenAIChatMessageRole.user,
-            content: imageContents,
-          ),
-        ],
-        maxTokens: 1000,
-        temperature: 0.3, // Lower temperature for more consistent results
+      // Make direct HTTP request to ensure proper format
+      final response = await http.post(
+        Uri.parse('$_openAiBaseUrl/chat/completions'),
+        headers: {
+          'Authorization': 'Bearer $_apiKey',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'model': _model,
+          'messages': [
+            {
+              'role': 'user',
+              'content': contentItems,
+            }
+          ],
+          'max_tokens': 1000,
+          'temperature': 0.3,
+        }),
       );
 
-      final content = response.choices.first.message.content;
+      if (response.statusCode != 200) {
+        final error = jsonDecode(response.body);
+        throw Exception(error['error']?['message'] ?? 'API request failed');
+      }
+
+      final data = jsonDecode(response.body);
+      final content = data['choices']?[0]?['message']?['content'] as String?;
+      
       if (content == null || content.isEmpty) {
         throw Exception('No response from AI');
       }
 
       // Parse the JSON response
-      final jsonStr = _extractJson(content.first.text ?? '');
-      final data = jsonDecode(jsonStr) as Map<String, dynamic>;
-      final ingredients = List<String>.from(data['ingredients'] ?? []);
+      final jsonStr = _extractJson(content);
+      final parsedData = jsonDecode(jsonStr) as Map<String, dynamic>;
+      final ingredients = List<String>.from(parsedData['ingredients'] ?? []);
 
       debugPrint('AI detected ${ingredients.length} ingredients');
 
       return IngredientScanResult(
         detectedIngredients: ingredients,
         additionalItems: additionalItems,
-        rawAnalysis: content.first.text,
+        rawAnalysis: content,
       );
     } catch (e) {
       debugPrint('Error analyzing ingredients: $e');

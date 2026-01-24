@@ -190,4 +190,44 @@ class PreferencesService {
     
     return sorted.take(limit).map((e) => e.key).toList();
   }
+
+  /// Save preferred Instacart retailer
+  Future<void> savePreferredRetailer({
+    required String odUserId,
+    required String retailerId,
+    required String retailerName,
+    required String postalCode,
+  }) async {
+    try {
+      await _preferencesCollection.doc(odUserId).update({
+        'preferredRetailerId': retailerId,
+        'preferredRetailerName': retailerName,
+        'postalCode': postalCode,
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      });
+      debugPrint('✅ Saved preferred retailer: $retailerName');
+    } catch (e) {
+      debugPrint('Error saving preferred retailer: $e');
+      rethrow;
+    }
+  }
+
+  /// Clear preferred retailer
+  Future<void> clearPreferredRetailer(String odUserId) async {
+    try {
+      await _preferencesCollection.doc(odUserId).update({
+        'preferredRetailerId': null,
+        'preferredRetailerName': null,
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      });
+    } catch (e) {
+      debugPrint('Error clearing preferred retailer: $e');
+    }
+  }
+
+  /// Get saved postal code for retailer search
+  Future<String?> getSavedPostalCode(String odUserId) async {
+    final prefs = await getPreferences(odUserId);
+    return prefs?.postalCode;
+  }
 }

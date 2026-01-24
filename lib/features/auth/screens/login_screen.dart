@@ -56,9 +56,11 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handleGoogleSignIn() async {
     setState(() => _isLoading = true);
     final result = await widget.authService.signInWithGoogle();
+    
+    if (!mounted) return;
     setState(() => _isLoading = false);
 
-    if (!result.success && mounted) {
+    if (!result.success) {
       _showError(result.errorMessage ?? 'Failed to sign in with Google');
     }
   }
@@ -66,9 +68,11 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handleAppleSignIn() async {
     setState(() => _isLoading = true);
     final result = await widget.authService.signInWithApple();
+    
+    if (!mounted) return;
     setState(() => _isLoading = false);
 
-    if (!result.success && mounted) {
+    if (!result.success) {
       _showError(result.errorMessage ?? 'Failed to sign in with Apple');
     }
   }

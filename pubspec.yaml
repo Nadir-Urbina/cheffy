@@ -63,7 +63,14 @@ dependencies:
 
   # Voice features
   speech_to_text: ^7.0.0
-  flutter_tts: ^4.2.0
+  just_audio: ^0.9.40  # For playing OpenAI TTS audio
+  path_provider: ^2.1.2  # For caching audio files
+
+  # URL launcher for opening Instacart links
+  url_launcher: ^6.2.5
+
+  # YouTube video data extraction
+  youtube_explode_dart: ^2.2.1
 
 dev_dependencies:
   flutter_test:
@@ -75,6 +82,19 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
+
+  # App icon generator
+  flutter_launcher_icons: ^0.14.3
+
+# Flutter Launcher Icons configuration
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icons/cheffy app icon.png"
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/icons/cheffy app icon.png"
+  min_sdk_android: 21
+  remove_alpha_ios: true
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -90,6 +110,7 @@ flutter:
   # Assets
   assets:
     - assets/images/
+    - assets/icons/
     - .env
 
   # An image asset can refer to one or more resolution-specific "variants", see

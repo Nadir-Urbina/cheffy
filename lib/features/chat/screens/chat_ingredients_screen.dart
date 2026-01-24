@@ -1,4 +1,5 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -8,7 +9,6 @@ import '../../../core/services/ai_service.dart';
 import '../../../core/services/preferences_service.dart';
 import '../../../core/services/voice_service.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../../core/widgets/cheffy_orb.dart';
 import '../../scan/screens/recipe_results_screen.dart' show RecipeResultsScreen, StringExtension;
 
 class ChatIngredientsScreen extends StatefulWidget {
@@ -32,11 +32,9 @@ class _ChatIngredientsScreenState extends State<ChatIngredientsScreen>
   bool _isTyping = false;
   bool _isSearching = false;
   bool _isListening = false;
-  bool _readAloudEnabled = true; // TTS toggle
+  bool _readAloudEnabled = true;
   
-  // Animation for mic button
   late AnimationController _pulseController;
-  late Animation<double> _pulseAnimation;
 
   @override
   void initState() {
@@ -50,25 +48,15 @@ class _ChatIngredientsScreenState extends State<ChatIngredientsScreen>
     _pulseController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1000),
-    );
-    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.3).animate(
-      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-    );
-    _pulseController.repeat(reverse: true);
+    )..repeat(reverse: true);
   }
 
   Future<void> _initVoice() async {
     await _voiceService.initialize();
     
     _voiceService.onSpeechResult = (text) {
-      if (text.isNotEmpty) {
-        _messageController.text = text;
-        // Auto-send after speech recognition completes
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (mounted && _messageController.text.isNotEmpty) {
-            _sendMessage();
-          }
-        });
+      if (text.isNotEmpty && mounted) {
+        setState(() => _messageController.text = text);
       }
     };
     
@@ -80,9 +68,7 @@ class _ChatIngredientsScreenState extends State<ChatIngredientsScreen>
       if (mounted) setState(() => _isListening = false);
     };
     
-    _voiceService.onTtsComplete = () {
-      // TTS finished speaking
-    };
+    _voiceService.onTtsComplete = () {};
     
     _voiceService.onError = (error) {
       if (mounted) {
@@ -105,19 +91,17 @@ class _ChatIngredientsScreenState extends State<ChatIngredientsScreen>
   void _showSnackBar(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(message),
+        content: Text(message, style: const TextStyle(fontSize: 13)),
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }
 
-  /// Add a Cheffy message and optionally speak it
   void _addCheffyMessage(String text, {bool speak = true}) {
     _messages.add(_ChatMessage(text: text, isUser: false));
     
     if (speak && _readAloudEnabled) {
-      // Remove emojis for cleaner TTS
       final cleanText = text.replaceAll(RegExp(r'[^\x00-\x7F]+'), '').trim();
       if (cleanText.isNotEmpty) {
         _voiceService.speak(cleanText);
@@ -125,7 +109,6 @@ class _ChatIngredientsScreenState extends State<ChatIngredientsScreen>
     }
   }
 
-  /// Toggle voice input
   Future<void> _toggleVoiceInput() async {
     HapticFeedback.mediumImpact();
     
@@ -133,48 +116,28 @@ class _ChatIngredientsScreenState extends State<ChatIngredientsScreen>
       await _voiceService.stopListening();
       setState(() => _isListening = false);
     } else {
-      // Stop TTS if speaking
       await _voiceService.stop();
-      
       setState(() => _isListening = true);
       await _voiceService.startListening(
-        listenFor: const Duration(seconds: 15),
-        pauseFor: const Duration(seconds: 3),
+        listenFor: const Duration(seconds: 60),
+        pauseFor: const Duration(seconds: 5),
       );
     }
   }
 
-  /// Toggle read aloud
   void _toggleReadAloud() {
     HapticFeedback.selectionClick();
     setState(() {
       _readAloudEnabled = !_readAloudEnabled;
-      if (!_readAloudEnabled) {
-        _voiceService.stop();
-      }
+      if (!_readAloudEnabled) _voiceService.stop();
     });
-    _showSnackBar(_readAloudEnabled 
-        ? '🔊 Read aloud enabled' 
-        : '🔇 Read aloud disabled');
   }
 
   void _addCheffyGreeting() {
     _messages.add(_ChatMessage(
-      text: "Hey there! 👋 I'm Cheffy, your cooking buddy!",
+      text: "Hi! I'm Cheffy. Tell me what ingredients you have and I'll find recipes for you.\n\nYou can list them all at once or one by one.",
       isUser: false,
     ));
-    
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted) {
-        setState(() {
-          _messages.add(_ChatMessage(
-            text: "Tell me what ingredients you have, and I'll find delicious recipes for you! 🍳\n\nJust type them one by one or list them all at once.",
-            isUser: false,
-          ));
-        });
-        _scrollToBottom();
-      }
-    });
   }
 
   void _scrollToBottom() {
@@ -200,19 +163,28 @@ class _ChatIngredientsScreenState extends State<ChatIngredientsScreen>
     });
     _scrollToBottom();
 
-    // Parse ingredients from message
     _parseIngredients(text);
   }
 
   void _parseIngredients(String text) {
-    // Split by common delimiters
-    final newIngredients = text
-        .split(RegExp(r'[,\n;]|and|&'))
+    final cleanedText = _extractIngredientsFromSpeech(text);
+    debugPrint('Cleaned text: "$cleanedText"');
+    
+    var parts = cleanedText
+        .split(RegExp(r'[,\n;]|\band\b|&'))
         .map((s) => s.trim().toLowerCase())
-        .where((s) => s.isNotEmpty && s.length > 1)
+        .where((s) => s.isNotEmpty)
+        .toList();
+    
+    if (parts.length == 1 && parts.first.split(' ').length > 3) {
+      parts = _smartSplitIngredients(parts.first);
+    }
+    
+    final newIngredients = parts
+        .where((s) => s.isNotEmpty && s.length > 1 && !_isFillerWord(s))
         .toList();
 
-    Future.delayed(const Duration(milliseconds: 800), () {
+    Future.delayed(const Duration(milliseconds: 600), () {
       if (!mounted) return;
 
       setState(() {
@@ -220,17 +192,14 @@ class _ChatIngredientsScreenState extends State<ChatIngredientsScreen>
         
         if (newIngredients.isEmpty) {
           _addCheffyMessage(
-            "Hmm, I didn't quite catch that. Could you tell me what ingredients you have? For example: \"chicken, rice, tomatoes\" 🤔"
+            "I didn't catch any ingredients. Try something like: chicken, rice, tomatoes"
           );
         } else {
-          // Add new ingredients (avoid duplicates)
           for (final ing in newIngredients) {
             if (!_ingredients.contains(ing)) {
               _ingredients.add(ing);
             }
           }
-
-          // Respond with acknowledgment
           final response = _getCheffyResponse(newIngredients);
           _addCheffyMessage(response);
         }
@@ -239,28 +208,113 @@ class _ChatIngredientsScreenState extends State<ChatIngredientsScreen>
     });
   }
 
+  String _extractIngredientsFromSpeech(String text) {
+    String cleaned = text.toLowerCase();
+    
+    final phrasesToRemove = [
+      r"hey (cheffy|jeffy|chef|siri|alexa|google)",
+      r"hi (cheffy|jeffy|chef)",
+      r"so i have basically", r"i have basically", r"i basically have",
+      r"i've basically got", r"i've got", r"i have got", r"i got", r"i have",
+      r"we have", r"we've got", r"there is", r"there's", r"basically",
+      r"um+", r"uh+", r"like\s+", r"you know", r"let me see", r"let's see",
+      r"a lot of", r"lots of", r"a few", r"a little bit of", r"a little",
+      r"a bit of", r"i think", r"i guess", r"kind of", r"sort of",
+    ];
+    
+    for (final phrase in phrasesToRemove) {
+      cleaned = cleaned.replaceAll(RegExp(phrase, caseSensitive: false), ' ');
+    }
+    
+    return cleaned.replaceAll(RegExp(r'\s+'), ' ').trim();
+  }
+
+  List<String> _smartSplitIngredients(String text) {
+    final words = text.split(' ').where((w) => w.isNotEmpty).toList();
+    if (words.isEmpty) return [];
+    
+    const multiWordSuffixes = {
+      'breast', 'thigh', 'wing', 'leg', 'oil', 'cream', 'sauce', 'cheese',
+      'pepper', 'beans', 'rice', 'flour', 'sugar', 'powder', 'juice',
+      'leaves', 'seed', 'seeds', 'butter', 'milk', 'stock', 'broth',
+      'paste', 'vinegar',
+    };
+    
+    const multiWordPrefixes = {
+      'chicken', 'beef', 'pork', 'turkey', 'ground', 'fresh', 'frozen',
+      'olive', 'vegetable', 'coconut', 'sesame', 'canola', 'sour', 'heavy',
+      'whipping', 'cream', 'soy', 'hot', 'tomato', 'fish', 'oyster',
+      'bell', 'black', 'white', 'red', 'green', 'yellow', 'brown',
+      'powdered', 'granulated', 'lemon', 'lime', 'orange', 'apple',
+      'bay', 'basil', 'dried', 'peanut', 'almond', 'cashew', 'balsamic', 'wine',
+    };
+    
+    final ingredients = <String>[];
+    int i = 0;
+    
+    while (i < words.length) {
+      final word = words[i].toLowerCase();
+      
+      if (i + 1 < words.length) {
+        final nextWord = words[i + 1].toLowerCase();
+        
+        if (multiWordPrefixes.contains(word) && 
+            (multiWordSuffixes.contains(nextWord) || multiWordPrefixes.contains(nextWord))) {
+          ingredients.add('$word $nextWord');
+          i += 2;
+          continue;
+        }
+        
+        if (multiWordSuffixes.contains(nextWord)) {
+          ingredients.add('$word $nextWord');
+          i += 2;
+          continue;
+        }
+      }
+      
+      if (!_isFillerWord(word) && word.length > 1) {
+        ingredients.add(word);
+      }
+      i++;
+    }
+    
+    return ingredients;
+  }
+
+  bool _isFillerWord(String word) {
+    const fillerWords = {
+      'a', 'an', 'the', 'some', 'any', 'few', 'little', 'bit',
+      'i', 'we', 'you', 'have', 'has', 'got', 'get', 'also',
+      'basically', 'actually', 'really', 'just', 'only', 'maybe',
+      'probably', 'think', 'guess', 'so', 'then', 'too',
+      'oh', 'ah', 'um', 'uh', 'hmm', 'well', 'like',
+      'yes', 'no', 'yeah', 'yep', 'nope', 'ok', 'okay', 'sure', 
+      'right', 'here', 'there', 'this', 'that', 'it', 'its',
+    };
+    return fillerWords.contains(word.toLowerCase());
+  }
+
   String _getCheffyResponse(List<String> newIngredients) {
     final total = _ingredients.length;
     
     if (newIngredients.length == 1) {
       final responses = [
-        "Got it! ${newIngredients.first.capitalize()} added! 📝 What else do you have?",
-        "Nice! ${newIngredients.first.capitalize()} is on the list! Anything else? 🍴",
-        "Perfect! Added ${newIngredients.first}! Keep 'em coming! 😊",
+        "Got it, ${newIngredients.first} added. What else?",
+        "${newIngredients.first.capitalize()} is on the list. Anything else?",
+        "Added ${newIngredients.first}. Keep going!",
       ];
       return responses[total % responses.length];
     } else {
       final responses = [
-        "Awesome! I've added ${newIngredients.length} ingredients! 🎉 You now have $total items. Anything else?",
-        "Great haul! ${newIngredients.length} more ingredients added! That's $total total. What else? 🛒",
-        "Love it! Got ${newIngredients.length} new items! Keep going or tap 'Find Recipes' when ready! 👨‍🍳",
+        "Added ${newIngredients.length} ingredients. You now have $total total. What else?",
+        "Great! ${newIngredients.length} more added. That's $total items now.",
+        "Got ${newIngredients.length} new items. Tap 'Find Recipes' when you're ready!",
       ];
       return responses[total % responses.length];
     }
   }
 
   Future<void> _findRecipes() async {
-    // Stop listening if active
     if (_isListening) {
       await _voiceService.stopListening();
       setState(() => _isListening = false);
@@ -268,9 +322,7 @@ class _ChatIngredientsScreenState extends State<ChatIngredientsScreen>
     
     if (_ingredients.isEmpty) {
       setState(() {
-        _addCheffyMessage(
-          "Oops! You haven't told me any ingredients yet. What do you have in your kitchen? 🏠"
-        );
+        _addCheffyMessage("You haven't added any ingredients yet. What do you have?");
       });
       _scrollToBottom();
       return;
@@ -278,14 +330,7 @@ class _ChatIngredientsScreenState extends State<ChatIngredientsScreen>
 
     setState(() {
       _isSearching = true;
-      _messages.add(_ChatMessage(
-        text: "Finding recipes...",
-        isUser: true,
-        isAction: true,
-      ));
-      _addCheffyMessage(
-        "Let me search for the best recipes with your ${_ingredients.length} ingredients... 🔍✨"
-      );
+      _addCheffyMessage("Searching for recipes with your ${_ingredients.length} ingredients...", speak: false);
     });
     _scrollToBottom();
 
@@ -306,9 +351,8 @@ class _ChatIngredientsScreenState extends State<ChatIngredientsScreen>
 
       if (mounted) {
         if (result.hasRecipes) {
-          // Announce before navigating
           if (_readAloudEnabled) {
-            _voiceService.speak("I found ${result.recipes.length} delicious recipes for you!");
+            _voiceService.speak("I found ${result.recipes.length} recipes for you!");
           }
           Navigator.push(
             context,
@@ -318,9 +362,7 @@ class _ChatIngredientsScreenState extends State<ChatIngredientsScreen>
           );
         } else {
           setState(() {
-            _addCheffyMessage(
-              "Hmm, I couldn't find any recipes with those ingredients. Try adding a few more! 🤷‍♂️"
-            );
+            _addCheffyMessage("Couldn't find recipes with those ingredients. Try adding a few more.");
           });
           _scrollToBottom();
         }
@@ -328,9 +370,7 @@ class _ChatIngredientsScreenState extends State<ChatIngredientsScreen>
     } catch (e) {
       setState(() {
         _isSearching = false;
-        _addCheffyMessage(
-          "Oops! Something went wrong: ${e.toString()} 😅"
-        );
+        _addCheffyMessage("Something went wrong. Please try again.");
       });
       _scrollToBottom();
     }
@@ -339,14 +379,7 @@ class _ChatIngredientsScreenState extends State<ChatIngredientsScreen>
   void _clearIngredients() {
     setState(() {
       _ingredients.clear();
-      _messages.add(_ChatMessage(
-        text: "Clear list",
-        isUser: true,
-        isAction: true,
-      ));
-      _addCheffyMessage(
-        "All cleared! 🧹 Let's start fresh. What ingredients do you have?"
-      );
+      _addCheffyMessage("List cleared. What ingredients do you have?");
     });
     _scrollToBottom();
   }
@@ -354,93 +387,57 @@ class _ChatIngredientsScreenState extends State<ChatIngredientsScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      extendBodyBehindAppBar: true,
+      backgroundColor: Colors.white,
       appBar: _buildAppBar(),
-      body: Container(
-        decoration: AppColors.freshGradientDecoration,
-        child: SafeArea(
-          child: Column(
-            children: [
-              // Ingredients summary chip
-              if (_ingredients.isNotEmpty) _buildIngredientsSummary(),
-              // Chat messages
-              Expanded(child: _buildChatList()),
-              // Input area
-              _buildInputArea(),
-            ],
-          ),
-        ),
+      body: Column(
+        children: [
+          if (_ingredients.isNotEmpty) _buildIngredientsSummary(),
+          Expanded(child: _buildChatList()),
+          _buildInputArea(),
+        ],
       ),
     );
   }
 
-  String _getStatusText() {
-    if (_isListening) return 'Listening... 🎤';
-    if (_isTyping) return 'typing...';
-    if (_voiceService.isSpeaking) return 'Speaking...';
-    return 'Your cooking assistant';
-  }
-
   PreferredSizeWidget _buildAppBar() {
     return AppBar(
-      backgroundColor: Colors.transparent,
+      backgroundColor: Colors.white,
       elevation: 0,
+      scrolledUnderElevation: 1,
       leading: IconButton(
-        icon: const Icon(Icons.arrow_back_ios, color: AppColors.textPrimary, size: 20),
+        icon: const Icon(Icons.arrow_back, color: Colors.black87, size: 22),
         onPressed: () {
           _voiceService.stop();
           Navigator.pop(context);
         },
       ),
-      titleSpacing: 0,
-      title: Row(
-        children: [
-          const CheffyOrb(size: 48),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Cheffy',
-                  style: GoogleFonts.poppins(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.w600,
-                    fontSize: 18,
-                  ),
-                ),
-                Text(
-                  _getStatusText(),
-                  style: GoogleFonts.poppins(
-                    color: _isTyping || _isListening 
-                        ? AppColors.primary 
-                        : AppColors.textSecondary,
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+      title: Text(
+        'Cheffy',
+        style: GoogleFonts.inter(
+          color: Colors.black87,
+          fontWeight: FontWeight.w600,
+          fontSize: 17,
+        ),
       ),
+      centerTitle: true,
       actions: [
-        // Read aloud toggle
         IconButton(
           icon: Icon(
-            _readAloudEnabled ? Icons.volume_up : Icons.volume_off,
-            color: _readAloudEnabled ? AppColors.primary : AppColors.textSecondary,
+            _readAloudEnabled ? Icons.volume_up_rounded : Icons.volume_off_rounded,
+            color: _readAloudEnabled ? AppColors.primary : Colors.grey,
+            size: 22,
           ),
           onPressed: _toggleReadAloud,
-          tooltip: _readAloudEnabled ? 'Mute Cheffy' : 'Unmute Cheffy',
         ),
         if (_ingredients.isNotEmpty)
           TextButton(
             onPressed: _clearIngredients,
             child: Text(
               'Clear',
-              style: GoogleFonts.poppins(
-                color: AppColors.error,
+              style: GoogleFonts.inter(
+                color: Colors.red.shade400,
                 fontWeight: FontWeight.w500,
+                fontSize: 14,
               ),
             ),
           ),
@@ -450,39 +447,33 @@ class _ChatIngredientsScreenState extends State<ChatIngredientsScreen>
 
   Widget _buildIngredientsSummary() {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
-        color: AppColors.primaryLight.withValues(alpha: 0.15),
-        border: Border(
-          bottom: BorderSide(color: AppColors.border.withValues(alpha: 0.5)),
-        ),
+        color: Colors.grey.shade50,
+        border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
       ),
       child: Row(
         children: [
-          Icon(Icons.shopping_basket, 
-              size: 18, color: AppColors.primary.withValues(alpha: 0.8)),
+          Icon(Icons.shopping_basket_outlined, size: 16, color: Colors.grey.shade600),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              _ingredients.take(5).map((e) => e.capitalize()).join(', ') +
-                  (_ingredients.length > 5 ? '...' : ''),
-              style: GoogleFonts.poppins(
-                fontSize: 13,
-                color: AppColors.textPrimary,
-              ),
+              _ingredients.take(4).map((e) => e.capitalize()).join(', ') +
+                  (_ingredients.length > 4 ? ' +${_ingredients.length - 4} more' : ''),
+              style: GoogleFonts.inter(fontSize: 13, color: Colors.grey.shade700),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
               color: AppColors.primary,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(10),
             ),
             child: Text(
               '${_ingredients.length}',
-              style: GoogleFonts.poppins(
+              style: GoogleFonts.inter(
                 color: Colors.white,
                 fontWeight: FontWeight.w600,
                 fontSize: 12,
@@ -497,14 +488,53 @@ class _ChatIngredientsScreenState extends State<ChatIngredientsScreen>
   Widget _buildChatList() {
     return ListView.builder(
       controller: _scrollController,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       itemCount: _messages.length + (_isTyping ? 1 : 0),
       itemBuilder: (context, index) {
         if (index == _messages.length && _isTyping) {
-          return _TypingIndicator();
+          return _buildTypingIndicator();
         }
         return _ChatBubble(message: _messages[index]);
       },
+    );
+  }
+
+  Widget _buildTypingIndicator() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: List.generate(3, (i) {
+                return AnimatedBuilder(
+                  animation: _pulseController,
+                  builder: (context, _) {
+                    final delay = i * 0.2;
+                    final value = ((_pulseController.value + delay) % 1.0);
+                    final opacity = (value < 0.5 ? value : 1 - value) * 2;
+                    return Container(
+                      margin: const EdgeInsets.symmetric(horizontal: 2),
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade400.withValues(alpha: 0.4 + opacity * 0.6),
+                        shape: BoxShape.circle,
+                      ),
+                    );
+                  },
+                );
+              }),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -512,157 +542,100 @@ class _ChatIngredientsScreenState extends State<ChatIngredientsScreen>
     final bool hasText = _messageController.text.isNotEmpty;
     
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.95),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 10,
-            offset: const Offset(0, -2),
-          ),
-        ],
+        color: Colors.white,
+        border: Border(top: BorderSide(color: Colors.grey.shade200)),
       ),
       child: SafeArea(
+        top: false,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Listening indicator
-            if (_isListening)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 10),
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: AppColors.primary.withValues(alpha: 0.3),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      AnimatedBuilder(
-                        animation: _pulseAnimation,
-                        builder: (context, child) {
-                          return Transform.scale(
-                            scale: _pulseAnimation.value,
-                            child: Container(
-                              width: 12,
-                              height: 12,
-                              decoration: const BoxDecoration(
-                                color: AppColors.primary,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        'Listening... speak your ingredients',
-                        style: GoogleFonts.poppins(
-                          fontSize: 13,
-                          color: AppColors.primary,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
             // Find Recipes button
-            if (_ingredients.isNotEmpty && !_isListening)
+            if (_ingredients.isNotEmpty)
               Padding(
-                padding: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.only(bottom: 8),
                 child: SizedBox(
                   width: double.infinity,
-                  child: ElevatedButton.icon(
+                  child: ElevatedButton(
                     onPressed: _isSearching ? null : _findRecipes,
-                    icon: _isSearching
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                    child: _isSearching
                         ? const SizedBox(
-                            width: 18,
-                            height: 18,
+                            width: 18, height: 18,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
                               valueColor: AlwaysStoppedAnimation(Colors.white),
                             ),
                           )
-                        : const Icon(Icons.auto_awesome, size: 20),
-                    label: Text(
-                      _isSearching
-                          ? 'Searching...'
-                          : 'Find Recipes (${_ingredients.length} ingredients)',
-                      style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(25),
-                      ),
-                    ),
+                        : Text(
+                            'Find Recipes (${_ingredients.length})',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                          ),
                   ),
                 ),
               ),
-            // Text input
-            Row(
-              children: [
-                // Mic button
-                GestureDetector(
-                  onTap: _toggleVoiceInput,
-                  child: AnimatedBuilder(
-                    animation: _pulseAnimation,
-                    builder: (context, child) {
-                      return Transform.scale(
-                        scale: _isListening ? _pulseAnimation.value * 0.9 + 0.1 : 1.0,
-                        child: Container(
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color: _isListening 
-                                ? AppColors.error
-                                : AppColors.primary.withValues(alpha: 0.1),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(
-                            _isListening ? Icons.stop : Icons.mic,
-                            color: _isListening ? Colors.white : AppColors.primary,
-                            size: 24,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF5F5F5),
-                      borderRadius: BorderRadius.circular(28),
+            // Input row
+            Container(
+              constraints: const BoxConstraints(maxHeight: 180), // ~9 lines
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.grey.shade300, width: 0.5),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  // Mic button
+                  Padding(
+                    padding: const EdgeInsets.only(left: 4, bottom: 4),
+                    child: IconButton(
+                      onPressed: _toggleVoiceInput,
+                      icon: Icon(
+                        _isListening ? Icons.stop_rounded : Icons.mic_rounded,
+                        color: _isListening ? Colors.red : Colors.grey.shade600,
+                        size: 22,
+                      ),
+                      style: IconButton.styleFrom(
+                        backgroundColor: _isListening 
+                            ? Colors.red.withValues(alpha: 0.1) 
+                            : Colors.transparent,
+                      ),
                     ),
+                  ),
+                  // Text field
+                  Expanded(
                     child: TextField(
                       controller: _messageController,
                       textCapitalization: TextCapitalization.sentences,
-                      style: GoogleFonts.poppins(
+                      maxLines: null,
+                      minLines: 1,
+                      style: GoogleFonts.inter(
                         fontSize: 15,
-                        color: AppColors.textPrimary,
+                        color: Colors.black87,
                       ),
                       decoration: InputDecoration(
-                        hintText: _isListening 
-                            ? 'Listening...' 
-                            : 'Type or tap mic to speak...',
-                        hintStyle: GoogleFonts.poppins(
-                          color: AppColors.textHint,
+                        hintText: _isListening ? 'Listening...' : 'Message',
+                        hintStyle: GoogleFonts.inter(
+                          color: Colors.grey.shade500,
                           fontSize: 15,
                         ),
                         border: InputBorder.none,
                         contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 22,
-                          vertical: 14,
+                          horizontal: 4,
+                          vertical: 12,
                         ),
                       ),
                       onChanged: (_) => setState(() {}),
@@ -670,34 +643,27 @@ class _ChatIngredientsScreenState extends State<ChatIngredientsScreen>
                       enabled: !_isListening,
                     ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                GestureDetector(
-                  onTap: hasText ? _sendMessage : null,
-                  child: Container(
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: hasText 
-                          ? AppColors.primary 
-                          : AppColors.primary.withValues(alpha: 0.4),
-                      shape: BoxShape.circle,
-                      boxShadow: hasText ? [
-                        BoxShadow(
-                          color: AppColors.primary.withValues(alpha: 0.3),
-                          blurRadius: 8,
-                          offset: const Offset(0, 3),
-                        ),
-                      ] : null,
-                    ),
-                    child: const Icon(
-                      Icons.send_rounded,
-                      color: Colors.white,
-                      size: 24,
+                  // Send button
+                  Padding(
+                    padding: const EdgeInsets.only(right: 4, bottom: 4),
+                    child: IconButton(
+                      onPressed: hasText ? _sendMessage : null,
+                      icon: Icon(
+                        Icons.arrow_upward_rounded,
+                        color: hasText ? Colors.white : Colors.grey.shade400,
+                        size: 20,
+                      ),
+                      style: IconButton.styleFrom(
+                        backgroundColor: hasText 
+                            ? Colors.black87 
+                            : Colors.grey.shade300,
+                        minimumSize: const Size(32, 32),
+                        padding: const EdgeInsets.all(6),
+                      ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ],
         ),
@@ -710,17 +676,15 @@ class _ChatIngredientsScreenState extends State<ChatIngredientsScreen>
 class _ChatMessage {
   final String text;
   final bool isUser;
-  final bool isAction;
   final DateTime timestamp;
 
   _ChatMessage({
     required this.text,
     required this.isUser,
-    this.isAction = false,
   }) : timestamp = DateTime.now();
 }
 
-/// Chat bubble widget
+/// Chat bubble widget - ChatGPT style
 class _ChatBubble extends StatelessWidget {
   final _ChatMessage message;
 
@@ -728,168 +692,54 @@ class _ChatBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (message.isAction) {
-      return _ActionBubble(text: message.text);
-    }
-
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
-      child: Row(
-        mainAxisAlignment:
-            message.isUser ? MainAxisAlignment.end : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (!message.isUser) ...[
-            const Padding(
-              padding: EdgeInsets.only(top: 8),
-              child: CheffyOrb(size: 36),
-            ),
-            const SizedBox(width: 10),
-          ],
-          Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-              decoration: BoxDecoration(
-                color: message.isUser 
-                    ? AppColors.primary.withValues(alpha: 0.9) 
-                    : Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Text(
-                message.text,
-                style: GoogleFonts.poppins(
-                  color: message.isUser ? Colors.white : AppColors.textPrimary,
-                  fontSize: 15,
-                  height: 1.5,
-                ),
-              ),
-            ),
-          ),
-          if (message.isUser) const SizedBox(width: 46),
-        ],
-      ),
+      child: message.isUser ? _buildUserMessage() : _buildAssistantMessage(),
     );
   }
-}
 
-/// Action bubble (for system actions like "Clear list")
-class _ActionBubble extends StatelessWidget {
-  final String text;
-
-  const _ActionBubble({required this.text});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-          decoration: BoxDecoration(
-            color: AppColors.surfaceVariant,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Text(
-            text,
-            style: GoogleFonts.poppins(
-              color: AppColors.textSecondary,
-              fontSize: 12,
+  Widget _buildUserMessage() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        const SizedBox(width: 48),
+        Flexible(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Text(
+              message.text,
+              style: GoogleFonts.inter(
+                color: Colors.black87,
+                fontSize: 14,
+                height: 1.4,
+              ),
             ),
           ),
         ),
-      ),
+      ],
+    );
+  }
+
+  Widget _buildAssistantMessage() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Flexible(
+          child: Text(
+            message.text,
+            style: GoogleFonts.inter(
+              color: Colors.black87,
+              fontSize: 14,
+              height: 1.5,
+            ),
+          ),
+        ),
+        const SizedBox(width: 48),
+      ],
     );
   }
 }
-
-/// Typing indicator
-class _TypingIndicator extends StatefulWidget {
-  @override
-  State<_TypingIndicator> createState() => _TypingIndicatorState();
-}
-
-class _TypingIndicatorState extends State<_TypingIndicator>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1200),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 16),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Padding(
-            padding: EdgeInsets.only(top: 8),
-            child: CheffyOrb(size: 36),
-          ),
-          const SizedBox(width: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: AnimatedBuilder(
-              animation: _controller,
-              builder: (context, child) {
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: List.generate(3, (index) {
-                    final delay = index * 0.2;
-                    final value = ((_controller.value + delay) % 1.0);
-                    final opacity = (value < 0.5 ? value : 1 - value) * 2;
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 3),
-                      child: Opacity(
-                        opacity: 0.3 + (opacity * 0.7),
-                        child: Container(
-                          width: 10,
-                          height: 10,
-                          decoration: BoxDecoration(
-                            color: AppColors.primary,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                      ),
-                    );
-                  }),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-

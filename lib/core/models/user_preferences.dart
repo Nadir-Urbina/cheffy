@@ -68,6 +68,11 @@ class UserPreferences {
   final Map<String, int> cuisineInteractionCount; // cuisine -> count
   final Map<String, int> ingredientUsageCount; // ingredient -> count
 
+  // Instacart preferences
+  final String? preferredRetailerId;
+  final String? preferredRetailerName;
+  final String? postalCode;
+
   UserPreferences({
     required this.odUserId,
     this.dietaryRestrictions = const [],
@@ -85,6 +90,9 @@ class UserPreferences {
     this.savedRecipeIds = const [],
     this.cuisineInteractionCount = const {},
     this.ingredientUsageCount = const {},
+    this.preferredRetailerId,
+    this.preferredRetailerName,
+    this.postalCode,
   });
 
   /// Create default preferences for new user
@@ -144,6 +152,9 @@ class UserPreferences {
           Map<String, int>.from(data['cuisineInteractionCount'] ?? {}),
       ingredientUsageCount:
           Map<String, int>.from(data['ingredientUsageCount'] ?? {}),
+      preferredRetailerId: data['preferredRetailerId'] as String?,
+      preferredRetailerName: data['preferredRetailerName'] as String?,
+      postalCode: data['postalCode'] as String?,
     );
   }
 
@@ -165,6 +176,9 @@ class UserPreferences {
       'savedRecipeIds': savedRecipeIds,
       'cuisineInteractionCount': cuisineInteractionCount,
       'ingredientUsageCount': ingredientUsageCount,
+      'preferredRetailerId': preferredRetailerId,
+      'preferredRetailerName': preferredRetailerName,
+      'postalCode': postalCode,
     };
   }
 
@@ -183,6 +197,9 @@ class UserPreferences {
     List<String>? savedRecipeIds,
     Map<String, int>? cuisineInteractionCount,
     Map<String, int>? ingredientUsageCount,
+    String? preferredRetailerId,
+    String? preferredRetailerName,
+    String? postalCode,
   }) {
     return UserPreferences(
       odUserId: odUserId,
@@ -202,8 +219,14 @@ class UserPreferences {
       cuisineInteractionCount:
           cuisineInteractionCount ?? this.cuisineInteractionCount,
       ingredientUsageCount: ingredientUsageCount ?? this.ingredientUsageCount,
+      preferredRetailerId: preferredRetailerId ?? this.preferredRetailerId,
+      preferredRetailerName: preferredRetailerName ?? this.preferredRetailerName,
+      postalCode: postalCode ?? this.postalCode,
     );
   }
+
+  /// Check if a preferred retailer is set
+  bool get hasPreferredRetailer => preferredRetailerId != null;
 }
 
 /// Extension for display names

@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import '../../../core/models/recipe_model.dart';
+import '../../../core/models/user_preferences.dart';
 import '../../../core/services/auth_service.dart';
+import '../../../core/services/preferences_service.dart';
+import '../../../core/services/spoonacular_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../chat/screens/chat_ingredients_screen.dart';
 import '../../scan/screens/scan_ingredients_screen.dart';
+import '../../scan/screens/recipe_results_screen.dart' show RecipeDetailScreen, StringExtension;
+import '../../video/screens/video_recipe_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   final AuthService authService;
@@ -20,19 +26,17 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: AppColors.freshGradientDecoration,
-        child: SafeArea(
-          child: IndexedStack(
-            index: _currentIndex,
-            children: [
-              _HomeContent(authService: widget.authService),
-              const _PlaceholderScreen(title: 'Recipes', icon: Icons.menu_book),
-              const _PlaceholderScreen(
-                  title: 'Grocery List', icon: Icons.shopping_cart),
-              _ProfileScreen(authService: widget.authService),
-            ],
-          ),
+      backgroundColor: Colors.white,
+      body: SafeArea(
+        child: IndexedStack(
+          index: _currentIndex,
+          children: [
+            _HomeContent(authService: widget.authService),
+            const _PlaceholderScreen(title: 'Recipes', icon: Icons.menu_book),
+            const _PlaceholderScreen(
+                title: 'Grocery List', icon: Icons.shopping_cart),
+            _ProfileScreen(authService: widget.authService),
+          ],
         ),
       ),
       bottomNavigationBar: _buildBottomNav(),
@@ -94,101 +98,184 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 /// Home tab content
-class _HomeContent extends StatelessWidget {
+class _HomeContent extends StatefulWidget {
   final AuthService authService;
 
   const _HomeContent({required this.authService});
 
   @override
+  State<_HomeContent> createState() => _HomeContentState();
+}
+
+class _HomeContentState extends State<_HomeContent> {
+  final SpoonacularService _spoonacularService = SpoonacularService();
+  final PreferencesService _preferencesService = PreferencesService();
+  List<Recipe> _popularRecipes = [];
+  bool _isLoading = true;
+  String? _selectedCategory;
+  UserPreferences? _userPreferences;
+
+  // Category data with emoji icons and API tags
+  static const List<_CategoryData> _categories = [
+    _CategoryData(name: 'All', emoji: '🍽️', tag: null),
+    _CategoryData(name: 'Breakfast', emoji: '🥞', tag: 'breakfast'),
+    _CategoryData(name: 'Lunch', emoji: '🍱', tag: 'lunch'),
+    _CategoryData(name: 'Dinner', emoji: '🍝', tag: 'dinner'),
+    _CategoryData(name: 'Dessert', emoji: '🧁', tag: 'dessert'),
+    _CategoryData(name: 'Salad', emoji: '🥗', tag: 'salad'),
+    _CategoryData(name: 'Soup', emoji: '🍲', tag: 'soup'),
+    _CategoryData(name: 'Appetizer', emoji: '🍤', tag: 'appetizer'),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserPreferencesAndRecipes();
+  }
+
+  Future<void> _loadUserPreferencesAndRecipes() async {
+    // Load user preferences first
+    final userId = widget.authService.currentUser?.uid;
+    if (userId != null) {
+      _userPreferences = await _preferencesService.getPreferences(userId);
+    }
+    await _loadPopularRecipes();
+  }
+
+  Future<void> _loadPopularRecipes() async {
+    setState(() => _isLoading = true);
+    try {
+      // Fetch more recipes so we can filter by skill level
+      final recipes = await _spoonacularService.getPopularRecipes(
+        count: 12, // Fetch extra to have enough after filtering
+        tags: _selectedCategory,
+      );
+      
+      // Sort/filter by user's skill level
+      final sortedRecipes = _sortBySkillLevel(recipes);
+      
+      if (mounted) {
+        setState(() {
+          _popularRecipes = sortedRecipes.take(5).toList();
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  /// Sort recipes based on user's skill level preference
+  /// Beginner: 3 easy, 1 medium, 1 hard
+  /// Intermediate: 1 easy, 3 medium, 1 hard
+  /// Advanced: 1 easy, 1 medium, 3 hard
+  List<Recipe> _sortBySkillLevel(List<Recipe> recipes) {
+    if (recipes.isEmpty) return recipes;
+    
+    final skillLevel = _userPreferences?.skillLevel ?? CookingSkillLevel.beginner;
+    
+    // Separate recipes by difficulty
+    final easy = recipes.where((r) => r.difficulty.toLowerCase() == 'easy').toList();
+    final medium = recipes.where((r) => r.difficulty.toLowerCase() == 'medium').toList();
+    final hard = recipes.where((r) => r.difficulty.toLowerCase() == 'hard').toList();
+    
+    // Determine counts based on skill level
+    int easyCount, mediumCount, hardCount;
+    switch (skillLevel) {
+      case CookingSkillLevel.beginner:
+        easyCount = 3;
+        mediumCount = 1;
+        hardCount = 1;
+        break;
+      case CookingSkillLevel.intermediate:
+        easyCount = 1;
+        mediumCount = 3;
+        hardCount = 1;
+        break;
+      case CookingSkillLevel.advanced:
+        easyCount = 1;
+        mediumCount = 1;
+        hardCount = 3;
+        break;
+    }
+    
+    // Build result list prioritizing user's skill level
+    final result = <Recipe>[];
+    result.addAll(easy.take(easyCount));
+    result.addAll(medium.take(mediumCount));
+    result.addAll(hard.take(hardCount));
+    
+    // If we don't have enough in preferred categories, fill from others
+    if (result.length < 5) {
+      final remaining = recipes.where((r) => !result.contains(r)).toList();
+      result.addAll(remaining.take(5 - result.length));
+    }
+    
+    // Shuffle to mix difficulties
+    result.shuffle();
+    
+    return result;
+  }
+
+  void _onCategorySelected(String? tag) {
+    if (_selectedCategory != tag) {
+      setState(() => _selectedCategory = tag);
+      _loadPopularRecipes();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildHeader(),
-          const SizedBox(height: 24),
-          _buildActionCards(context),
-          const SizedBox(height: 28),
-          _buildRecipeSuggestions(),
-          const SizedBox(height: 28),
-          _buildMissingItems(),
-          const SizedBox(height: 20),
-        ],
+    return RefreshIndicator(
+      onRefresh: _loadPopularRecipes,
+      color: AppColors.primary,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildHeader(),
+            const SizedBox(height: 24),
+            _buildActionCards(context),
+            const SizedBox(height: 28),
+            _buildPopularRecipes(),
+            const SizedBox(height: 20),
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildHeader() {
-    return Row(
+    // Get user's first name
+    final user = widget.authService.currentUser;
+    final displayName = user?.displayName ?? '';
+    final firstName = displayName.isNotEmpty 
+        ? displayName.split(' ').first 
+        : 'Chef';
+
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'What do you want\nto cook today?',
-                style: GoogleFonts.poppins(
-                  fontSize: 26,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.textPrimary,
-                  height: 1.2,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'No plan needed. Start with what you have.',
-                style: GoogleFonts.poppins(
-                  fontSize: 14,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-            ],
+        Text(
+          'Hey $firstName,',
+          style: GoogleFonts.poppins(
+            fontSize: 16,
+            fontWeight: FontWeight.w500,
+            color: AppColors.textSecondary,
           ),
         ),
-        const SizedBox(width: 8),
-        // Illustration placeholder
-        SizedBox(
-          width: 100,
-          height: 80,
-          child: Stack(
-            children: [
-              Positioned(
-                right: 0,
-                top: 0,
-                child: Text(
-                  '🍳',
-                  style: TextStyle(
-                    fontSize: 50,
-                    shadows: [
-                      Shadow(
-                        color: Colors.black.withValues(alpha: 0.1),
-                        offset: const Offset(2, 2),
-                        blurRadius: 4,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Positioned(
-                right: 40,
-                bottom: 0,
-                child: Text(
-                  '🥛',
-                  style: TextStyle(
-                    fontSize: 32,
-                    shadows: [
-                      Shadow(
-                        color: Colors.black.withValues(alpha: 0.1),
-                        offset: const Offset(1, 1),
-                        blurRadius: 2,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
+        const SizedBox(height: 4),
+        Text(
+          'What would you like\nto cook today?',
+          style: GoogleFonts.poppins(
+            fontSize: 26,
+            fontWeight: FontWeight.w700,
+            color: AppColors.textPrimary,
+            height: 1.2,
           ),
         ),
       ],
@@ -212,7 +299,7 @@ class _HomeContent extends StatelessWidget {
             icon: '🎬',
             title: 'Paste a\nCooking Video',
             subtitle: 'Turn any video into\na recipe',
-            onTap: () => _showComingSoon(context, 'Video to Recipe'),
+            onTap: () => _navigateToVideo(context),
           ),
         ),
         const SizedBox(width: 12),
@@ -228,129 +315,128 @@ class _HomeContent extends StatelessWidget {
     );
   }
 
-  Widget _buildRecipeSuggestions() {
-    final recipes = [
-      _RecipeData(
-        name: 'Creamy Garlic Chicken',
-        time: '20 min',
-        difficulty: 'Easy',
-        match: 90,
-        emoji: '🍗',
-      ),
-      _RecipeData(
-        name: 'One-Pan Rice Bowl',
-        time: '25 min',
-        difficulty: 'Easy',
-        match: 85,
-        emoji: '🍚',
-      ),
-      _RecipeData(
-        name: '15-Minute Chicken Tacos',
-        time: '15 min',
-        difficulty: 'Quick',
-        match: 80,
-        emoji: '🌮',
-      ),
-    ];
-
+  Widget _buildPopularRecipes() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Based on what you have...',
-          style: GoogleFonts.poppins(
-            fontSize: 18,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 16),
-        SizedBox(
-          height: 200,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: recipes.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 12),
-            itemBuilder: (context, index) {
-              return _RecipeCard(recipe: recipes[index]);
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMissingItems() {
-    final missingItems = ['Milk', 'Onion', 'Olive Oil'];
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Missing Just ${missingItems.length} Items:',
-            style: GoogleFonts.poppins(
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary,
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              'Popular Recipes',
+              style: GoogleFonts.poppins(
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textPrimary,
+              ),
             ),
-          ),
-          const SizedBox(height: 12),
-          ...missingItems.map((item) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
+            if (!_isLoading && _popularRecipes.isNotEmpty)
+              GestureDetector(
+                onTap: _loadPopularRecipes,
                 child: Row(
                   children: [
-                    Icon(
-                      Icons.check,
-                      color: AppColors.primary,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
+                    Icon(Icons.refresh, size: 16, color: AppColors.primary),
+                    const SizedBox(width: 4),
                     Text(
-                      item,
+                      'Refresh',
                       style: GoogleFonts.poppins(
-                        fontSize: 14,
-                        color: AppColors.textPrimary,
+                        fontSize: 13,
+                        color: AppColors.primary,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ],
                 ),
-              )),
-          const SizedBox(height: 8),
-          SizedBox(
-            width: 180,
-            child: ElevatedButton(
-              onPressed: () {},
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(25),
-                ),
               ),
-              child: Text(
-                'Create Grocery List',
-                style: GoogleFonts.poppins(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        // Category filters
+        SizedBox(
+          height: 90,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: _categories.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 16),
+            itemBuilder: (context, index) {
+              final category = _categories[index];
+              final isSelected = _selectedCategory == category.tag;
+              return _CategoryChip(
+                category: category,
+                isSelected: isSelected,
+                onTap: () => _onCategorySelected(category.tag),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 16),
+        if (_isLoading)
+          SizedBox(
+            height: 260,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              clipBehavior: Clip.none,
+              padding: const EdgeInsets.only(bottom: 8),
+              itemCount: 3,
+              separatorBuilder: (_, __) => const SizedBox(width: 14),
+              itemBuilder: (_, __) => _RecipeCardSkeleton(),
+            ),
+          )
+        else if (_popularRecipes.isEmpty)
+          Container(
+            height: 120,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.restaurant_menu, size: 32, color: Colors.grey.shade400),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Unable to load recipes',
+                    style: GoogleFonts.poppins(
+                      fontSize: 14,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _loadPopularRecipes,
+                    child: Text('Try Again'),
+                  ),
+                ],
               ),
             ),
+          )
+        else
+          SizedBox(
+            height: 260,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              clipBehavior: Clip.none,
+              padding: const EdgeInsets.only(bottom: 8),
+              itemCount: _popularRecipes.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 14),
+              itemBuilder: (context, index) {
+                return _PopularRecipeCard(
+                  recipe: _popularRecipes[index],
+                  onTap: () => _showRecipeDetail(_popularRecipes[index]),
+                );
+              },
+            ),
           ),
-        ],
+      ],
+    );
+  }
+
+  void _showRecipeDetail(Recipe recipe) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => RecipeDetailScreen(recipe: recipe),
       ),
     );
   }
@@ -369,13 +455,203 @@ class _HomeContent extends StatelessWidget {
     );
   }
 
-  void _showComingSoon(BuildContext context, String feature) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$feature - Coming Soon!'),
-        backgroundColor: AppColors.primary,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+  void _navigateToVideo(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const VideoRecipeScreen()),
+    );
+  }
+}
+
+/// Popular recipe card with real image
+class _PopularRecipeCard extends StatelessWidget {
+  final Recipe recipe;
+  final VoidCallback onTap;
+
+  const _PopularRecipeCard({required this.recipe, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 175,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.grey.shade100, width: 1),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Image
+            ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+              child: recipe.imageUrl != null
+                  ? Image.network(
+                      recipe.imageUrl!,
+                      height: 130,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _buildPlaceholder(),
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+                        return Container(
+                          height: 130,
+                          color: Colors.grey.shade200,
+                          child: Center(
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                        );
+                      },
+                    )
+                  : _buildPlaceholder(),
+            ),
+            // Content
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    recipe.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.poppins(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                      height: 1.3,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Icon(Icons.schedule, size: 14, color: AppColors.textSecondary),
+                      const SizedBox(width: 4),
+                      Text(
+                        recipe.totalTimeFormatted,
+                        style: GoogleFonts.poppins(
+                          fontSize: 11,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: _getDifficultyColor(recipe.difficulty).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          recipe.difficulty.capitalize(),
+                          style: GoogleFonts.poppins(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w500,
+                            color: _getDifficultyColor(recipe.difficulty),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPlaceholder() {
+    return Container(
+      height: 130,
+      color: AppColors.primaryLight.withValues(alpha: 0.2),
+      child: Center(
+        child: Icon(
+          Icons.restaurant,
+          size: 40,
+          color: AppColors.primary.withValues(alpha: 0.5),
+        ),
+      ),
+    );
+  }
+
+  Color _getDifficultyColor(String difficulty) {
+    switch (difficulty.toLowerCase()) {
+      case 'easy':
+        return AppColors.success;
+      case 'medium':
+        return AppColors.warning;
+      case 'hard':
+        return AppColors.error;
+      default:
+        return AppColors.textSecondary;
+    }
+  }
+}
+
+/// Skeleton loader for recipe cards
+class _RecipeCardSkeleton extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 175,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade100, width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            height: 130,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade200,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  height: 14,
+                  width: 110,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  height: 14,
+                  width: 70,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  height: 20,
+                  width: 90,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -400,7 +676,6 @@ class _ActionCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        height: 155, // Fixed height for uniform cards
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: Colors.white,
@@ -412,13 +687,15 @@ class _ActionCard extends StatelessWidget {
               offset: const Offset(0, 2),
             ),
           ],
+          border: Border.all(color: Colors.grey.shade100),
         ),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 50,
-              height: 50,
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
                 color: AppColors.primaryLight.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(12),
@@ -426,133 +703,33 @@ class _ActionCard extends StatelessWidget {
               child: Center(
                 child: Text(
                   icon,
-                  style: const TextStyle(fontSize: 24),
+                  style: const TextStyle(fontSize: 22),
                 ),
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             Text(
               title,
               textAlign: TextAlign.center,
               style: GoogleFonts.poppins(
-                fontSize: 11,
+                fontSize: 10,
                 fontWeight: FontWeight.w600,
                 color: AppColors.textPrimary,
                 height: 1.2,
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 2),
             Text(
               subtitle,
               textAlign: TextAlign.center,
               style: GoogleFonts.poppins(
-                fontSize: 9,
+                fontSize: 8,
                 color: AppColors.textSecondary,
                 height: 1.2,
               ),
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// Recipe data model
-class _RecipeData {
-  final String name;
-  final String time;
-  final String difficulty;
-  final int match;
-  final String emoji;
-
-  _RecipeData({
-    required this.name,
-    required this.time,
-    required this.difficulty,
-    required this.match,
-    required this.emoji,
-  });
-}
-
-/// Recipe card widget
-class _RecipeCard extends StatelessWidget {
-  final _RecipeData recipe;
-
-  const _RecipeCard({required this.recipe});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 150,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Image placeholder
-          Container(
-            height: 100,
-            decoration: BoxDecoration(
-              color: AppColors.primaryLight.withValues(alpha: 0.3),
-              borderRadius:
-                  const BorderRadius.vertical(top: Radius.circular(16)),
-            ),
-            child: Center(
-              child: Text(
-                recipe.emoji,
-                style: const TextStyle(fontSize: 48),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  recipe.name,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.poppins(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                    height: 1.2,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '${recipe.time} · ${recipe.difficulty}',
-                  style: GoogleFonts.poppins(
-                    fontSize: 10,
-                    color: AppColors.textSecondary,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  '${recipe.match}% Match',
-                  style: GoogleFonts.poppins(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.primary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -742,6 +919,77 @@ class _ProfileMenuItem extends StatelessWidget {
   }
 }
 
+/// Category data model
+class _CategoryData {
+  final String name;
+  final String emoji;
+  final String? tag;
+
+  const _CategoryData({
+    required this.name,
+    required this.emoji,
+    required this.tag,
+  });
+}
+
+/// Category filter chip widget
+class _CategoryChip extends StatelessWidget {
+  final _CategoryData category;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _CategoryChip({
+    required this.category,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              color: isSelected ? AppColors.primary : Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: isSelected
+                  ? [
+                      BoxShadow(
+                        color: AppColors.primary.withValues(alpha: 0.3),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Center(
+              child: Text(
+                category.emoji,
+                style: const TextStyle(fontSize: 28),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            category.name,
+            style: GoogleFonts.poppins(
+              fontSize: 12,
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400,
+              color: isSelected ? AppColors.primary : AppColors.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Bottom nav item
 class _NavItem extends StatelessWidget {
   final IconData icon;
@@ -788,3 +1036,4 @@ class _NavItem extends StatelessWidget {
     );
   }
 }
+

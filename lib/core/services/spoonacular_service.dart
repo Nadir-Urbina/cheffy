@@ -34,9 +34,9 @@ class SpoonacularService {
         '$_baseUrl/recipes/findByIngredients'
         '?apiKey=$_apiKey'
         '&ingredients=$ingredientList'
-        '&number=${numberOfRecipes * 2}' // Get extra to filter
-        '&ranking=2' // Maximize used ingredients
-        '&ignorePantry=false',
+        '&number=${numberOfRecipes * 3}' // Get extra to filter and rank
+        '&ranking=1' // Maximize USED ingredients (use more of what user has)
+        '&ignorePantry=true', // Don't assume user has pantry staples
       );
 
       debugPrint('Searching recipes with ingredients: $ingredientList');
@@ -77,9 +77,22 @@ class SpoonacularService {
       // Step 3: Convert to our Recipe model and filter by preferences
       final recipes = <Recipe>[];
       
-      for (final recipeJson in detailsResults) {
+      // Identify the PRIMARY protein - this should be the star!
+      final primaryProtein = _identifyPrimaryProtein(ingredients);
+      final keyIngredients = _identifyKeyIngredients(ingredients);
+      
+      debugPrint('🥩 Primary protein: $primaryProtein');
+      debugPrint('🥔 Secondary key ingredients: $keyIngredients');
+      
+      for (int i = 0; i < detailsResults.length; i++) {
+        final recipeJson = detailsResults[i] as Map<String, dynamic>;
+        final searchResult = searchResults.firstWhere(
+          (r) => r['id'] == recipeJson['id'],
+          orElse: () => <String, dynamic>{},
+        );
+        
         final recipe = _parseSpoonacularRecipe(
-          recipeJson as Map<String, dynamic>,
+          recipeJson,
           searchResults,
           ingredients,
           preferences,
@@ -87,14 +100,64 @@ class SpoonacularService {
         
         // Filter by dietary restrictions
         if (_matchesDietaryRestrictions(recipeJson, preferences)) {
-          recipes.add(recipe);
+          // Get the list of ingredients this recipe uses from user's list
+          final usedIngredients = (searchResult['usedIngredients'] as List<dynamic>?) ?? [];
+          final usedNames = usedIngredients
+              .map((u) => (u['name'] ?? '').toString().toLowerCase())
+              .toSet();
+          
+          // Check if recipe uses the PRIMARY PROTEIN
+          bool usesProtein = false;
+          if (primaryProtein != null) {
+            usesProtein = usedNames.any((used) => 
+                used.contains(primaryProtein.toLowerCase()) || 
+                primaryProtein.toLowerCase().contains(used));
+          }
+          
+          // Count secondary key ingredients used
+          int keyIngredientsUsed = 0;
+          for (final key in keyIngredients) {
+            if (usedNames.any((used) => 
+                used.contains(key.toLowerCase()) || 
+                key.toLowerCase().contains(used))) {
+              keyIngredientsUsed++;
+            }
+          }
+          
+          // SCORING: Protein is KING
+          // - Recipes using the protein: +50 bonus (massive priority)
+          // - Secondary key ingredients: +10 each
+          // - Base match percentage
+          int boostedScore = recipe.matchPercentage;
+          if (usesProtein) {
+            boostedScore += 50; // Protein is the star!
+            debugPrint('⭐ "${recipe.name}" uses protein $primaryProtein! Score boosted to $boostedScore');
+          }
+          boostedScore += keyIngredientsUsed * 10;
+          
+          recipes.add(_RecipeWithScore(recipe, boostedScore, usesProtein ? 1 : 0));
         }
       }
 
-      // Sort by match percentage and return top results
-      recipes.sort((a, b) => b.matchPercentage.compareTo(a.matchPercentage));
+      // Sort by boosted score - protein recipes should float to top
+      recipes.sort((a, b) {
+        final aScore = a is _RecipeWithScore ? a.score : a.matchPercentage;
+        final bScore = b is _RecipeWithScore ? b.score : b.matchPercentage;
+        return bScore.compareTo(aScore);
+      });
       
-      return recipes.take(numberOfRecipes).toList();
+      debugPrint('📊 Final recipe ranking:');
+      for (final r in recipes.take(5)) {
+        if (r is _RecipeWithScore) {
+          debugPrint('  - ${r.recipe.name}: score=${r.score}, usesProtein=${r.keyIngredientsUsed > 0}');
+        }
+      }
+      
+      // Return actual Recipe objects
+      return recipes
+          .take(numberOfRecipes)
+          .map((r) => r is _RecipeWithScore ? r.recipe : r)
+          .toList();
     } catch (e) {
       debugPrint('Error fetching recipes from Spoonacular: $e');
       rethrow;
@@ -270,6 +333,44 @@ class SpoonacularService {
     return true;
   }
 
+  /// Identify the PRIMARY protein - this is the star of the dish
+  String? _identifyPrimaryProtein(List<String> ingredients) {
+    const proteins = [
+      'chicken', 'beef', 'ground beef', 'pork', 'fish', 'salmon', 'tuna', 
+      'shrimp', 'turkey', 'lamb', 'bacon', 'ham', 'sausage', 'steak', 
+      'tofu', 'tempeh', 'meatball', 'ground turkey', 'ground pork',
+      'ribeye', 'sirloin', 'tenderloin', 'chuck', 'brisket',
+    ];
+    
+    for (final ingredient in ingredients) {
+      final lower = ingredient.toLowerCase();
+      if (proteins.any((p) => lower.contains(p))) {
+        return ingredient;
+      }
+    }
+    return null;
+  }
+
+  /// Identify secondary key ingredients
+  List<String> _identifyKeyIngredients(List<String> ingredients) {
+    const keywordPatterns = [
+      // Main carbs
+      'pasta', 'rice', 'noodles', 'bread', 'potato', 'quinoa',
+      // Key vegetables often central to dishes
+      'broccoli', 'cauliflower', 'mushroom', 'eggplant', 'zucchini',
+    ];
+    
+    final keyIngredients = <String>[];
+    for (final ingredient in ingredients) {
+      final lower = ingredient.toLowerCase();
+      if (keywordPatterns.any((pattern) => lower.contains(pattern))) {
+        keyIngredients.add(ingredient);
+      }
+    }
+    
+    return keyIngredients;
+  }
+
   /// Clean HTML tags from text
   String _cleanHtml(String html) {
     // Remove HTML tags
@@ -286,6 +387,96 @@ class SpoonacularService {
       cleaned = '${cleaned.substring(0, 197)}...';
     }
     return cleaned.trim();
+  }
+
+  /// Get random/popular recipes for home screen display
+  /// Returns recipes with real imagery
+  /// Optional [tags] parameter for filtering (e.g., 'breakfast', 'lunch', 'dinner', 'dessert', 'appetizer', 'salad', 'soup')
+  Future<List<Recipe>> getPopularRecipes({int count = 5, String? tags}) async {
+    try {
+      var urlString = '$_baseUrl/recipes/random'
+        '?apiKey=$_apiKey'
+        '&number=$count'
+        '&includeNutrition=false';
+      
+      if (tags != null && tags.isNotEmpty) {
+        urlString += '&tags=$tags';
+      }
+      
+      final url = Uri.parse(urlString);
+
+      debugPrint('Fetching $count popular recipes...');
+      
+      final response = await http.get(url);
+      
+      if (response.statusCode != 200) {
+        throw Exception('Spoonacular API error: ${response.statusCode}');
+      }
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final recipes = data['recipes'] as List<dynamic>? ?? [];
+      
+      return recipes.map((json) {
+        // Parse instructions
+        final analyzedInstructions = json['analyzedInstructions'] as List<dynamic>? ?? [];
+        final instructions = <String>[];
+        
+        for (final section in analyzedInstructions) {
+          final steps = section['steps'] as List<dynamic>? ?? [];
+          for (final step in steps) {
+            instructions.add(step['step'] ?? '');
+          }
+        }
+
+        // Parse ingredients
+        final extendedIngredients = json['extendedIngredients'] as List<dynamic>? ?? [];
+        final ingredients = extendedIngredients.map((ing) {
+          return RecipeIngredient(
+            name: ing['name'] ?? '',
+            quantity: (ing['amount'] ?? 0).toDouble(),
+            unit: ing['unit'] ?? '',
+            isOptional: false,
+            isAvailable: false, // Unknown for popular recipes
+          );
+        }).toList();
+
+        // Determine difficulty
+        final readyInMinutes = json['readyInMinutes'] ?? 30;
+        String difficulty;
+        if (readyInMinutes <= 20 && instructions.length <= 5) {
+          difficulty = 'easy';
+        } else if (readyInMinutes <= 45 && instructions.length <= 10) {
+          difficulty = 'medium';
+        } else {
+          difficulty = 'hard';
+        }
+
+        // Extract cuisine type
+        final cuisines = json['cuisines'] as List<dynamic>? ?? [];
+        final cuisineType = cuisines.isNotEmpty 
+            ? cuisines.first.toString().toLowerCase() 
+            : 'other';
+
+        return Recipe(
+          id: json['id'].toString(),
+          name: json['title'] ?? 'Unnamed Recipe',
+          description: _cleanHtml(json['summary'] ?? ''),
+          cuisineType: cuisineType,
+          prepTimeMinutes: json['preparationMinutes'] ?? 0,
+          cookTimeMinutes: json['cookingMinutes'] ?? (json['readyInMinutes'] ?? 30),
+          difficulty: difficulty,
+          servings: json['servings'] ?? 4,
+          ingredients: ingredients,
+          instructions: instructions,
+          matchPercentage: 0, // N/A for popular recipes
+          missingIngredients: [],
+          imageUrl: json['image'],
+        );
+      }).toList();
+    } catch (e) {
+      debugPrint('Error fetching popular recipes: $e');
+      return [];
+    }
   }
 
   /// Get recipe by ID (for detailed view)
@@ -311,4 +502,28 @@ class SpoonacularService {
       return null;
     }
   }
+}
+
+/// Helper class to track recipe with boosted score
+class _RecipeWithScore extends Recipe {
+  final Recipe recipe;
+  final int score;
+  final int keyIngredientsUsed;
+  
+  _RecipeWithScore(this.recipe, this.score, this.keyIngredientsUsed) : super(
+    id: recipe.id,
+    name: recipe.name,
+    description: recipe.description,
+    cuisineType: recipe.cuisineType,
+    prepTimeMinutes: recipe.prepTimeMinutes,
+    cookTimeMinutes: recipe.cookTimeMinutes,
+    difficulty: recipe.difficulty,
+    servings: recipe.servings,
+    ingredients: recipe.ingredients,
+    instructions: recipe.instructions,
+    matchPercentage: recipe.matchPercentage,
+    missingIngredients: recipe.missingIngredients,
+    imageUrl: recipe.imageUrl,
+    nutrition: recipe.nutrition,
+  );
 }
