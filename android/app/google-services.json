@@ -29,6 +29,49 @@
             {
               "client_id": "13788532625-j5fe5io38kpev86836msqd77j263cpuc.apps.googleusercontent.com",
               "client_type": 3
+            },
+            {
+              "client_id": "13788532625-j0nl0mlq1rrtlk9b8vjkv2iu3oqoda1m.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.cheffy"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:13788532625:android:d4c86c9e33cca95a635430",
+        "android_client_info": {
+          "package_name": "com.hizwayz.cheffy"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "13788532625-j5fe5io38kpev86836msqd77j263cpuc.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCMfAbqe03VX0wGpQIlsUqibjVRj-UOJos"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "13788532625-j5fe5io38kpev86836msqd77j263cpuc.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "13788532625-j0nl0mlq1rrtlk9b8vjkv2iu3oqoda1m.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.cheffy"
+              }
             }
           ]
         }

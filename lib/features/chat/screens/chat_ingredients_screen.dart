@@ -135,7 +135,7 @@ class _ChatIngredientsScreenState extends State<ChatIngredientsScreen>
 
   void _addCheffyGreeting() {
     _messages.add(_ChatMessage(
-      text: "Hi! I'm Cheffy. Tell me what ingredients you have and I'll find recipes for you.\n\nYou can list them all at once or one by one.",
+      text: "Hi! I'm Chefsito. Tell me what ingredients you have and I'll find recipes for you.\n\nYou can list them all at once or one by one.",
       isUser: false,
     ));
   }
@@ -412,7 +412,7 @@ class _ChatIngredientsScreenState extends State<ChatIngredientsScreen>
         },
       ),
       title: Text(
-        'Cheffy',
+        'My Chefsito',
         style: GoogleFonts.inter(
           color: Colors.black87,
           fontWeight: FontWeight.w600,

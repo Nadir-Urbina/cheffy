@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Cheffy</string>
+	<string>My Chefsito</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -13,7 +13,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>cheffy</string>
+	<string>My Chefsito</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -47,14 +47,17 @@
 	<true/>
 	<!-- Camera and Photo Library Permissions -->
 	<key>NSCameraUsageDescription</key>
-	<string>Cheffy needs camera access to scan your ingredients and help suggest recipes.</string>
+	<string>My Chefsito needs camera access to scan your ingredients and help suggest recipes.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>Cheffy needs photo library access to select images of your ingredients.</string>
+	<string>My Chefsito needs photo library access to select images of your ingredients.</string>
 	<!-- Microphone Permission for Voice Input -->
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>Cheffy uses speech recognition so you can tell me ingredients hands-free while cooking.</string>
+	<string>My Chefsito uses speech recognition so you can tell me ingredients hands-free while cooking.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Cheffy needs microphone access so you can speak ingredients hands-free while cooking.</string>
+	<string>My Chefsito needs microphone access so you can speak ingredients hands-free while cooking.</string>
+	<!-- Location Permission for finding nearby stores -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>My Chefsito uses your location to find grocery stores near you for convenient ingredient shopping.</string>
 	<!-- Google Sign-In URL Scheme -->
 	<key>CFBundleURLTypes</key>
 	<array>
@@ -63,7 +66,7 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.googleusercontent.apps.13788532625-j0nl0mlq1rrtlk9b8vjkv2iu3oqoda1m</string>
+				<string>com.googleusercontent.apps.13788532625-qh2h2ea1sst5to2526q2jj3gm64648e3</string>
 			</array>
 		</dict>
 	</array>

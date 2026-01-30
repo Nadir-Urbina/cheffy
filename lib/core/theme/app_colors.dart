@@ -6,14 +6,14 @@ class AppColors {
   AppColors._();
 
   // Primary Green Palette
-  static const Color primary = Color(0xFF7CB342);
-  static const Color primaryLight = Color(0xFF9CCC65);
-  static const Color primaryDark = Color(0xFF558B2F);
+  static const Color primary = Color(0xFF0D9A62);
+  static const Color primaryLight = Color(0xFF2EBD81);
+  static const Color primaryDark = Color(0xFF087A4E);
 
   // Background Colors
-  static const Color background = Color(0xFFF8FBF5);
+  static const Color background = Color(0xFFFFFFFF);
   static const Color backgroundGradientStart = Color(0xFFFFFFFF);
-  static const Color backgroundGradientEnd = Color(0xFFF1F8E9);
+  static const Color backgroundGradientEnd = Color(0xFFFFFFFF);
 
   /// Standard fresh gradient for all screens
   static const LinearGradient freshGradient = LinearGradient(

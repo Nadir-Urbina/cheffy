@@ -6,11 +6,15 @@ import 'package:http/http.dart' as http;
 
 import '../models/recipe_model.dart';
 import '../models/user_preferences.dart';
+import 'recipe_cache_service.dart';
 
 /// Service for fetching verified recipes from Spoonacular API
 /// https://spoonacular.com/food-api/docs
 class SpoonacularService {
   static const String _baseUrl = 'https://api.spoonacular.com';
+  
+  // Cache service for reducing API calls
+  final RecipeCacheService _cacheService = RecipeCacheService();
   
   String get _apiKey {
     final key = dotenv.env['SPOONACULAR_API_KEY'];
@@ -281,7 +285,7 @@ class SpoonacularService {
       instructions: instructions,
       matchPercentage: matchPercentage,
       missingIngredients: missingIngredientNames,
-      imageUrl: json['image'],
+      imageUrl: _getHighResImageUrl(json['image']),
       nutrition: nutrition,
     );
   }
@@ -389,11 +393,74 @@ class SpoonacularService {
     return cleaned.trim();
   }
 
+  /// Convert Spoonacular image URL to highest resolution (636x393)
+  /// 
+  /// Spoonacular images follow the pattern:
+  /// https://img.spoonacular.com/recipes/{id}-{size}.{ext}
+  /// or https://spoonacular.com/recipeImages/{id}-{size}.{ext}
+  /// 
+  /// Available sizes: 90x90, 240x150, 312x231, 480x360, 556x370, 636x393
+  String? _getHighResImageUrl(String? imageUrl) {
+    if (imageUrl == null || imageUrl.isEmpty) return null;
+    
+    // Remove trailing period if present (malformed URL)
+    String cleanUrl = imageUrl.endsWith('.') 
+        ? '${imageUrl}jpg'  // Add jpg extension
+        : imageUrl;
+    
+    // Pattern to match Spoonacular image URLs with size and extension
+    // e.g., https://img.spoonacular.com/recipes/716429-556x370.jpg
+    final sizePattern = RegExp(r'-\d+x\d+\.(\w+)$');
+    
+    if (sizePattern.hasMatch(cleanUrl)) {
+      // Replace existing size with max resolution
+      return cleanUrl.replaceAllMapped(
+        sizePattern,
+        (match) => '-636x393.${match.group(1)}',
+      );
+    }
+    
+    // Some URLs might not have size, try to add it
+    // e.g., https://spoonacular.com/recipeImages/716429.jpg
+    final noSizePattern = RegExp(r'/(\d+)\.(\w+)$');
+    if (noSizePattern.hasMatch(cleanUrl)) {
+      return cleanUrl.replaceAllMapped(
+        noSizePattern,
+        (match) => '/${match.group(1)}-636x393.${match.group(2)}',
+      );
+    }
+    
+    // If URL has no extension at all, try adding .jpg
+    if (!cleanUrl.contains(RegExp(r'\.\w+$'))) {
+      // Extract recipe ID and construct proper URL
+      final idMatch = RegExp(r'/recipes?/(\d+)').firstMatch(cleanUrl);
+      if (idMatch != null) {
+        return 'https://img.spoonacular.com/recipes/${idMatch.group(1)}-636x393.jpg';
+      }
+    }
+    
+    // Return cleaned URL if pattern doesn't match
+    return cleanUrl;
+  }
+
   /// Get random/popular recipes for home screen display
   /// Returns recipes with real imagery
   /// Optional [tags] parameter for filtering (e.g., 'breakfast', 'lunch', 'dinner', 'dessert', 'appetizer', 'salad', 'soup')
-  Future<List<Recipe>> getPopularRecipes({int count = 5, String? tags}) async {
+  /// Set [forceRefresh] to true to bypass cache
+  Future<List<Recipe>> getPopularRecipes({
+    int count = 5, 
+    String? tags,
+    bool forceRefresh = false,
+  }) async {
     try {
+      // Check cache first (unless forcing refresh)
+      if (!forceRefresh) {
+        final cachedRecipes = await _cacheService.getCachedPopularRecipes(tag: tags);
+        if (cachedRecipes != null && cachedRecipes.length >= count) {
+          return cachedRecipes.take(count).toList();
+        }
+      }
+      
       var urlString = '$_baseUrl/recipes/random'
         '?apiKey=$_apiKey'
         '&number=$count'
@@ -405,7 +472,7 @@ class SpoonacularService {
       
       final url = Uri.parse(urlString);
 
-      debugPrint('Fetching $count popular recipes...');
+      debugPrint('🌐 Fetching $count popular recipes from API (tag: $tags)...');
       
       final response = await http.get(url);
       
@@ -414,9 +481,9 @@ class SpoonacularService {
       }
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
-      final recipes = data['recipes'] as List<dynamic>? ?? [];
+      final recipesJson = data['recipes'] as List<dynamic>? ?? [];
       
-      return recipes.map((json) {
+      final result = recipesJson.map((json) {
         // Parse instructions
         final analyzedInstructions = json['analyzedInstructions'] as List<dynamic>? ?? [];
         final instructions = <String>[];
@@ -470,9 +537,14 @@ class SpoonacularService {
           instructions: instructions,
           matchPercentage: 0, // N/A for popular recipes
           missingIngredients: [],
-          imageUrl: json['image'],
+          imageUrl: _getHighResImageUrl(json['image']),
         );
       }).toList();
+      
+      // Cache the results for future use
+      await _cacheService.cachePopularRecipes(result, tag: tags);
+      
+      return result;
     } catch (e) {
       debugPrint('Error fetching popular recipes: $e');
       return [];

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/models/recipe_model.dart';
 import '../../../core/models/user_preferences.dart';
@@ -7,6 +8,8 @@ import '../../../core/services/preferences_service.dart';
 import '../../../core/services/spoonacular_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../chat/screens/chat_ingredients_screen.dart';
+import '../../meal_planning/screens/meal_plan_screen.dart';
+import '../../recipes/screens/recipes_screen.dart';
 import '../../scan/screens/scan_ingredients_screen.dart';
 import '../../scan/screens/recipe_results_screen.dart' show RecipeDetailScreen, StringExtension;
 import '../../video/screens/video_recipe_screen.dart';
@@ -31,8 +34,12 @@ class _HomeScreenState extends State<HomeScreen> {
         child: IndexedStack(
           index: _currentIndex,
           children: [
-            _HomeContent(authService: widget.authService),
-            const _PlaceholderScreen(title: 'Recipes', icon: Icons.menu_book),
+            _HomeContent(
+              authService: widget.authService,
+              onProfileTap: () => setState(() => _currentIndex = 4),
+            ),
+            RecipesScreen(isActive: _currentIndex == 1),
+            const MealPlanScreen(),
             const _PlaceholderScreen(
                 title: 'Grocery List', icon: Icons.shopping_cart),
             _ProfileScreen(authService: widget.authService),
@@ -57,7 +64,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       child: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
@@ -76,18 +83,25 @@ class _HomeScreenState extends State<HomeScreen> {
                 onTap: () => setState(() => _currentIndex = 1),
               ),
               _NavItem(
-                icon: Icons.shopping_cart_outlined,
-                activeIcon: Icons.shopping_cart,
-                label: 'Grocery List',
+                icon: Icons.calendar_month_outlined,
+                activeIcon: Icons.calendar_month,
+                label: 'Meal Plan',
                 isActive: _currentIndex == 2,
                 onTap: () => setState(() => _currentIndex = 2),
+              ),
+              _NavItem(
+                icon: Icons.shopping_cart_outlined,
+                activeIcon: Icons.shopping_cart,
+                label: 'Grocery',
+                isActive: _currentIndex == 3,
+                onTap: () => setState(() => _currentIndex = 3),
               ),
               _NavItem(
                 icon: Icons.person_outline,
                 activeIcon: Icons.person,
                 label: 'Profile',
-                isActive: _currentIndex == 3,
-                onTap: () => setState(() => _currentIndex = 3),
+                isActive: _currentIndex == 4,
+                onTap: () => setState(() => _currentIndex = 4),
               ),
             ],
           ),
@@ -100,8 +114,9 @@ class _HomeScreenState extends State<HomeScreen> {
 /// Home tab content
 class _HomeContent extends StatefulWidget {
   final AuthService authService;
+  final VoidCallback? onProfileTap;
 
-  const _HomeContent({required this.authService});
+  const _HomeContent({required this.authService, this.onProfileTap});
 
   @override
   State<_HomeContent> createState() => _HomeContentState();
@@ -142,13 +157,14 @@ class _HomeContentState extends State<_HomeContent> {
     await _loadPopularRecipes();
   }
 
-  Future<void> _loadPopularRecipes() async {
+  Future<void> _loadPopularRecipes({bool forceRefresh = false}) async {
     setState(() => _isLoading = true);
     try {
       // Fetch more recipes so we can filter by skill level
       final recipes = await _spoonacularService.getPopularRecipes(
         count: 12, // Fetch extra to have enough after filtering
         tags: _selectedCategory,
+        forceRefresh: forceRefresh,
       );
       
       // Sort/filter by user's skill level
@@ -229,7 +245,7 @@ class _HomeContentState extends State<_HomeContent> {
   @override
   Widget build(BuildContext context) {
     return RefreshIndicator(
-      onRefresh: _loadPopularRecipes,
+      onRefresh: () => _loadPopularRecipes(forceRefresh: true),
       color: AppColors.primary,
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
@@ -250,7 +266,7 @@ class _HomeContentState extends State<_HomeContent> {
   }
 
   Widget _buildHeader() {
-    // Get user's first name
+    // Get user's info
     final user = widget.authService.currentUser;
     final displayName = user?.displayName ?? '';
     final firstName = displayName.isNotEmpty 
@@ -260,15 +276,53 @@ class _HomeContentState extends State<_HomeContent> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Hey $firstName,',
-          style: GoogleFonts.poppins(
-            fontSize: 16,
-            fontWeight: FontWeight.w500,
-            color: AppColors.textSecondary,
-          ),
+        // Top row with avatar and greeting
+        Row(
+          children: [
+            // User avatar
+            GestureDetector(
+              onTap: widget.onProfileTap,
+              child: Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: AppColors.primary.withValues(alpha: 0.15),
+                    width: 2,
+                  ),
+                ),
+                child: CircleAvatar(
+                  radius: 20,
+                  backgroundColor: AppColors.primaryLight.withValues(alpha: 0.3),
+                  backgroundImage: user?.photoURL != null 
+                      ? NetworkImage(user!.photoURL!) 
+                      : null,
+                  child: user?.photoURL == null
+                      ? Text(
+                          (displayName.isNotEmpty ? displayName[0] : 'C').toUpperCase(),
+                          style: GoogleFonts.poppins(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.primary,
+                          ),
+                        )
+                      : null,
+                ),
+              ),
+            ),
+            const SizedBox(width: 12),
+            // Greeting
+            Text(
+              'Hey $firstName,',
+              style: GoogleFonts.poppins(
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 8),
+        // Main question
         Text(
           'What would you like\nto cook today?',
           style: GoogleFonts.poppins(
@@ -287,7 +341,7 @@ class _HomeContentState extends State<_HomeContent> {
       children: [
         Expanded(
           child: _ActionCard(
-            icon: '📷',
+            svgPath: 'assets/icons/home_page_feature_icons/camera.svg',
             title: 'Scan Your\nIngredients',
             subtitle: 'Take a photo of your\nfridge or pantry',
             onTap: () => _navigateToScan(context),
@@ -296,7 +350,7 @@ class _HomeContentState extends State<_HomeContent> {
         const SizedBox(width: 12),
         Expanded(
           child: _ActionCard(
-            icon: '🎬',
+            svgPath: 'assets/icons/home_page_feature_icons/clapboard.svg',
             title: 'Paste a\nCooking Video',
             subtitle: 'Turn any video into\na recipe',
             onTap: () => _navigateToVideo(context),
@@ -305,7 +359,7 @@ class _HomeContentState extends State<_HomeContent> {
         const SizedBox(width: 12),
         Expanded(
           child: _ActionCard(
-            icon: '💬',
+            svgPath: 'assets/icons/home_page_feature_icons/chat_bubble.svg',
             title: 'Chat What\nYou Have',
             subtitle: 'Type or speak\ningredients',
             onTap: () => _navigateToChat(context),
@@ -332,7 +386,7 @@ class _HomeContentState extends State<_HomeContent> {
             ),
             if (!_isLoading && _popularRecipes.isNotEmpty)
               GestureDetector(
-                onTap: _loadPopularRecipes,
+                onTap: () => _loadPopularRecipes(forceRefresh: true),
                 child: Row(
                   children: [
                     Icon(Icons.refresh, size: 16, color: AppColors.primary),
@@ -659,13 +713,13 @@ class _RecipeCardSkeleton extends StatelessWidget {
 
 /// Action card widget
 class _ActionCard extends StatelessWidget {
-  final String icon;
+  final String svgPath;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
 
   const _ActionCard({
-    required this.icon,
+    required this.svgPath,
     required this.title,
     required this.subtitle,
     required this.onTap,
@@ -701,9 +755,14 @@ class _ActionCard extends StatelessWidget {
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Center(
-                child: Text(
-                  icon,
-                  style: const TextStyle(fontSize: 22),
+                child: SvgPicture.asset(
+                  svgPath,
+                  width: 26,
+                  height: 26,
+                  colorFilter: ColorFilter.mode(
+                    AppColors.primary,
+                    BlendMode.srcIn,
+                  ),
                 ),
               ),
             ),
@@ -1012,20 +1071,20 @@ class _NavItem extends StatelessWidget {
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
       child: SizedBox(
-        width: 70,
+        width: 64,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
               isActive ? activeIcon : icon,
               color: isActive ? AppColors.primary : AppColors.textSecondary,
-              size: 26,
+              size: 24,
             ),
             const SizedBox(height: 4),
             Text(
               label,
               style: GoogleFonts.poppins(
-                fontSize: 11,
+                fontSize: 10,
                 fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
                 color: isActive ? AppColors.primary : AppColors.textSecondary,
               ),

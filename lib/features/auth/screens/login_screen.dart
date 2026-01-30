@@ -139,7 +139,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Widget _buildLogo() {
     return Image.asset(
-      'assets/images/cheffy brand image.png',
+      'assets/images/My Chefsito App Brand Image.png',
       width: 220,
       fit: BoxFit.contain,
     );
@@ -149,7 +149,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return Column(
       children: [
         Text(
-          'Welcome to Cheffy',
+          'Welcome to My Chefsito',
           style: GoogleFonts.poppins(
             fontSize: 26,
             fontWeight: FontWeight.w700,

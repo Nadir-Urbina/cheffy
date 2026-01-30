@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/models/instacart_models.dart';
 import '../../../core/services/instacart_service.dart';
@@ -41,8 +43,10 @@ class _RetailerSelectorSheetState extends State<RetailerSelectorSheet> {
   
   List<InstacartRetailer> _retailers = [];
   bool _isLoading = false;
+  bool _isLoadingLocation = false;
   String? _error;
   InstacartRetailer? _selectedRetailer;
+  bool _locationPermissionDenied = false;
 
   @override
   void initState() {
@@ -50,6 +54,147 @@ class _RetailerSelectorSheetState extends State<RetailerSelectorSheet> {
     if (widget.initialPostalCode != null) {
       _postalCodeController.text = widget.initialPostalCode!;
       _searchRetailers();
+    } else {
+      // Try to get location automatically on first open
+      _checkAndRequestLocation();
+    }
+  }
+
+  Future<void> _checkAndRequestLocation() async {
+    // Check if location services are enabled
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      return; // Location services disabled, user can enter manually
+    }
+
+    // Check permission status
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      // Don't auto-request, wait for user to tap the button
+      return;
+    }
+    
+    if (permission == LocationPermission.deniedForever) {
+      setState(() => _locationPermissionDenied = true);
+      return;
+    }
+
+    // We have permission, get location
+    await _getLocationAndSearch();
+  }
+
+  Future<void> _requestLocationPermission() async {
+    setState(() => _isLoadingLocation = true);
+
+    try {
+      // Check if location services are enabled
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Please enable location services'),
+              backgroundColor: AppColors.warning,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          );
+          setState(() => _isLoadingLocation = false);
+        }
+        return;
+      }
+
+      // Request permission
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          if (mounted) {
+            setState(() => _isLoadingLocation = false);
+          }
+          return;
+        }
+      }
+
+      if (permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          setState(() {
+            _locationPermissionDenied = true;
+            _isLoadingLocation = false;
+          });
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Location permission denied. Please enable in Settings.'),
+              backgroundColor: AppColors.warning,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              action: SnackBarAction(
+                label: 'Settings',
+                textColor: Colors.white,
+                onPressed: () => Geolocator.openAppSettings(),
+              ),
+            ),
+          );
+        }
+        return;
+      }
+
+      // Permission granted, get location
+      await _getLocationAndSearch();
+    } catch (e) {
+      debugPrint('Location error: $e');
+      if (mounted) {
+        setState(() => _isLoadingLocation = false);
+      }
+    }
+  }
+
+  Future<void> _getLocationAndSearch() async {
+    try {
+      setState(() => _isLoadingLocation = true);
+
+      // Get current position
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.low, // Low accuracy is faster and sufficient for ZIP
+          timeLimit: Duration(seconds: 10),
+        ),
+      );
+
+      // Reverse geocode to get postal code
+      final placemarks = await placemarkFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+
+      if (placemarks.isNotEmpty && placemarks.first.postalCode != null) {
+        final postalCode = placemarks.first.postalCode!;
+        if (mounted) {
+          setState(() {
+            _postalCodeController.text = postalCode;
+            _isLoadingLocation = false;
+          });
+          // Auto-search with the detected location
+          _searchRetailers();
+        }
+      } else {
+        if (mounted) {
+          setState(() => _isLoadingLocation = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Could not determine your ZIP code'),
+              backgroundColor: AppColors.warning,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Geocoding error: $e');
+      if (mounted) {
+        setState(() => _isLoadingLocation = false);
+      }
     }
   }
 
@@ -187,6 +332,39 @@ class _RetailerSelectorSheetState extends State<RetailerSelectorSheet> {
                   ],
                 ),
                 const SizedBox(height: 16),
+                // Use My Location button
+                if (!_locationPermissionDenied)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _isLoadingLocation ? null : _requestLocationPermission,
+                        icon: _isLoadingLocation
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  valueColor: AlwaysStoppedAnimation(Color(0xFF43B02A)),
+                                ),
+                              )
+                            : const Icon(Icons.my_location, size: 20),
+                        label: Text(
+                          _isLoadingLocation ? 'Finding your location...' : 'Use My Location',
+                          style: GoogleFonts.poppins(fontWeight: FontWeight.w500),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFF43B02A),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          side: const BorderSide(color: Color(0xFF43B02A), width: 1.5),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                 // Postal code input
                 Row(
                   children: [
@@ -479,16 +657,28 @@ class _RetailerTile extends StatelessWidget {
                       color: AppColors.textPrimary,
                     ),
                   ),
-                  if (retailer.address != null) ...[
-                    const SizedBox(height: 2),
-                    Text(
-                      retailer.address!,
-                      style: GoogleFonts.poppins(
-                        fontSize: 12,
-                        color: AppColors.textSecondary,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                  if (retailer.address != null && retailer.address!.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.location_on_outlined,
+                          size: 14,
+                          color: AppColors.textSecondary,
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            retailer.address!,
+                            style: GoogleFonts.poppins(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                   if (retailer.distance != null) ...[
@@ -496,7 +686,7 @@ class _RetailerTile extends StatelessWidget {
                     Row(
                       children: [
                         const Icon(
-                          Icons.location_on,
+                          Icons.directions_walk,
                           size: 14,
                           color: AppColors.textSecondary,
                         ),

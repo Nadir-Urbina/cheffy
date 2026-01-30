@@ -201,9 +201,9 @@ class InstacartService {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         final result = NearbyRetailersResponse.fromJson(data);
         
-        // Debug: log retailer IDs
+        // Debug: log retailer details including address
         for (final r in result.retailers) {
-          debugPrint('  Retailer: ${r.name} (id=${r.id})');
+          debugPrint('  Retailer: ${r.name} (id=${r.id}, address=${r.address})');
         }
         
         return result;

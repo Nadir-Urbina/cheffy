@@ -72,6 +72,24 @@ dependencies:
   # YouTube video data extraction
   youtube_explode_dart: ^2.2.1
 
+  # Location services
+  geolocator: ^13.0.2
+  geocoding: ^3.0.0
+
+  # Cooking mode features
+  wakelock_plus: ^1.2.8              # Keep screen on while cooking
+  flutter_local_notifications: ^18.0.1  # Timer notifications
+  audioplayers: ^6.1.0               # Timer sounds
+
+  # Date formatting
+  intl: ^0.19.0
+
+  # SVG support
+  flutter_svg: ^2.0.10
+
+  # Local storage for caching
+  shared_preferences: ^2.2.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -111,6 +129,8 @@ flutter:
   assets:
     - assets/images/
     - assets/icons/
+    - assets/icons/meal_type_svgs/
+    - assets/icons/home_page_feature_icons/
     - .env
 
   # An image asset can refer to one or more resolution-specific "variants", see

@@ -8,8 +8,11 @@ import '../../../core/models/recipe_model.dart';
 import '../../../core/models/video_recipe_models.dart';
 import '../../../core/services/instacart_service.dart';
 import '../../../core/services/preferences_service.dart';
+import '../../../core/services/recipe_history_service.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../cooking/screens/cooking_mode_screen.dart';
 import '../../instacart/widgets/retailer_selector.dart';
+import '../../meal_planning/widgets/schedule_meal_sheet.dart';
 
 class VideoRecipeResultScreen extends StatefulWidget {
   final VideoRecipeResult result;
@@ -23,8 +26,10 @@ class VideoRecipeResultScreen extends StatefulWidget {
 class _VideoRecipeResultScreenState extends State<VideoRecipeResultScreen> {
   final _instacartService = InstacartService();
   final _preferencesService = PreferencesService();
+  final _historyService = RecipeHistoryService();
   bool _isLoadingInstacart = false;
   String? _preferredRetailerName;
+  int _timesCooked = 0;
 
   VideoRecipeResult get result => widget.result;
   Recipe get recipe => result.recipe!;
@@ -34,6 +39,22 @@ class _VideoRecipeResultScreenState extends State<VideoRecipeResultScreen> {
   void initState() {
     super.initState();
     _loadPreferredRetailer();
+    _loadTimesCooked();
+  }
+
+  Future<void> _loadTimesCooked() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final count = await _historyService.getTimesCooked(user.uid, recipe.id);
+    if (mounted && count > 0) {
+      setState(() => _timesCooked = count);
+    }
+  }
+
+  Future<void> _scheduleMeal() async {
+    HapticFeedback.mediumImpact();
+    await ScheduleMealSheet.show(context, recipe);
   }
 
   Future<void> _loadPreferredRetailer() async {
@@ -153,6 +174,49 @@ class _VideoRecipeResultScreenState extends State<VideoRecipeResultScreen> {
               ),
               onPressed: () => Navigator.pop(context),
             ),
+            actions: [
+              // Calendar button
+              IconButton(
+                icon: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
+                  child: const Icon(Icons.calendar_month,
+                      size: 18, color: AppColors.textPrimary),
+                ),
+                onPressed: _scheduleMeal,
+              ),
+              // Bookmark button
+              IconButton(
+                icon: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.1),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
+                  child: const Icon(Icons.bookmark_border,
+                      size: 18, color: AppColors.textPrimary),
+                ),
+                onPressed: () {
+                  // TODO: Implement bookmark
+                },
+              ),
+              const SizedBox(width: 8),
+            ],
             expandedHeight: 250,
             flexibleSpace: FlexibleSpaceBar(
               background: Stack(
@@ -276,6 +340,44 @@ class _VideoRecipeResultScreenState extends State<VideoRecipeResultScreen> {
                         color: AppColors.textPrimary,
                       ),
                     ),
+                    // "Cooked X times" badge
+                    if (_timesCooked > 0) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: AppColors.primary.withValues(alpha: 0.3),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.check_circle,
+                              size: 16,
+                              color: AppColors.primary,
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              _timesCooked == 1
+                                  ? "You've made this recipe"
+                                  : "You've made this $_timesCooked times",
+                              style: GoogleFonts.poppins(
+                                fontSize: 13,
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 8),
                     // Description
                     Text(
@@ -453,7 +555,7 @@ class _VideoRecipeResultScreenState extends State<VideoRecipeResultScreen> {
                 children: [
                   // Shop on Instacart button
                   Expanded(
-                    child: ElevatedButton.icon(
+                    child: OutlinedButton.icon(
                       onPressed: _isLoadingInstacart ? null : _shopOnInstacart,
                       icon: _isLoadingInstacart
                           ? const SizedBox(
@@ -461,10 +563,10 @@ class _VideoRecipeResultScreenState extends State<VideoRecipeResultScreen> {
                               height: 18,
                               child: CircularProgressIndicator(
                                 strokeWidth: 2,
-                                valueColor: AlwaysStoppedAnimation(Colors.white),
+                                valueColor: AlwaysStoppedAnimation(AppColors.primary),
                               ),
                             )
-                          : const Icon(Icons.shopping_cart, size: 20),
+                          : Icon(Icons.shopping_cart, size: 20, color: AppColors.primary),
                       label: Text(
                         _isLoadingInstacart
                             ? 'Opening...'
@@ -473,10 +575,11 @@ class _VideoRecipeResultScreenState extends State<VideoRecipeResultScreen> {
                                 : 'Choose Store',
                         style: GoogleFonts.poppins(fontWeight: FontWeight.w600),
                       ),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF43B02A), // Instacart green
-                        foregroundColor: Colors.white,
+                      style: OutlinedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: AppColors.primary,
                         padding: const EdgeInsets.symmetric(vertical: 14),
+                        side: BorderSide(color: AppColors.primary, width: 1.5),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14),
                         ),
@@ -486,16 +589,12 @@ class _VideoRecipeResultScreenState extends State<VideoRecipeResultScreen> {
                   const SizedBox(width: 12),
                   // Start Cooking button
                   Expanded(
-                    flex: 2,
                     child: ElevatedButton.icon(
                       onPressed: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: const Text('Cooking mode coming soon!'),
-                            backgroundColor: AppColors.primary,
-                            behavior: SnackBarBehavior.floating,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10)),
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => CookingModeScreen(recipe: recipe),
                           ),
                         );
                       },

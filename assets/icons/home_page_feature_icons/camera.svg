@@ -1,0 +1,12 @@
+<svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Camera body -->
+  <rect x="6" y="10" width="24" height="18" rx="2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Lens outer circle -->
+  <circle cx="18" cy="19" r="5" stroke="currentColor" stroke-width="2"/>
+  <!-- Lens inner circle -->
+  <circle cx="18" cy="19" r="3" stroke="currentColor" stroke-width="2"/>
+  <!-- Viewfinder -->
+  <rect x="26" y="13" width="2" height="2" rx="0.5" fill="currentColor"/>
+  <!-- Flash line -->
+  <path d="M12 10 L12 7 L16 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

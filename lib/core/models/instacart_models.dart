@@ -242,12 +242,61 @@ class InstacartRetailer {
   });
 
   factory InstacartRetailer.fromJson(Map<String, dynamic> json) {
+    // Parse address from various possible structures
+    String? address = json['address'] as String?;
+    
+    // Try to build address from location object if direct address is null
+    if (address == null && json['location'] != null) {
+      final location = json['location'] as Map<String, dynamic>;
+      final parts = <String>[];
+      
+      if (location['address_line_1'] != null) {
+        parts.add(location['address_line_1'] as String);
+      }
+      if (location['city'] != null) {
+        parts.add(location['city'] as String);
+      }
+      if (location['state'] != null) {
+        final state = location['state'] as String;
+        if (location['zip_code'] != null) {
+          parts.add('$state ${location['zip_code']}');
+        } else {
+          parts.add(state);
+        }
+      }
+      
+      if (parts.isNotEmpty) {
+        address = parts.join(', ');
+      }
+    }
+    
+    // Try formatted_address field
+    address ??= json['formatted_address'] as String?;
+    
+    // Try address fields at root level
+    if (address == null) {
+      final parts = <String>[];
+      if (json['address_line_1'] != null) parts.add(json['address_line_1'] as String);
+      if (json['city'] != null) parts.add(json['city'] as String);
+      if (json['state'] != null) {
+        final state = json['state'] as String;
+        if (json['zip_code'] != null) {
+          parts.add('$state ${json['zip_code']}');
+        } else {
+          parts.add(state);
+        }
+      }
+      if (parts.isNotEmpty) {
+        address = parts.join(', ');
+      }
+    }
+    
     return InstacartRetailer(
-      id: json['id']?.toString() ?? '',
+      id: json['id']?.toString() ?? json['retailer_key']?.toString() ?? '',
       name: json['name'] as String? ?? 'Unknown Store',
-      logoUrl: json['logo_url'] as String?,
-      address: json['address'] as String?,
-      postalCode: json['postal_code'] as String?,
+      logoUrl: json['retailer_logo_url'] as String? ?? json['logo_url'] as String?,
+      address: address,
+      postalCode: json['postal_code'] as String? ?? json['zip_code'] as String?,
       distance: (json['distance'] as num?)?.toDouble(),
       isAvailable: json['is_available'] as bool? ?? true,
     );

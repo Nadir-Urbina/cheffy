@@ -51,7 +51,7 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyCMfAbqe03VX0wGpQIlsUqibjVRj-UOJos',
-    appId: '1:13788532625:android:94f4ec0bdbddaeea635430',
+    appId: '1:13788532625:android:d4c86c9e33cca95a635430',
     messagingSenderId: '13788532625',
     projectId: 'cheffy-e4f75',
     storageBucket: 'cheffy-e4f75.firebasestorage.app',
@@ -59,11 +59,11 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'AIzaSyAMFpXx3w0otm-4-zuzPFaCHKuBm7Smh-8',
-    appId: '1:13788532625:ios:87af4875d6acf06a635430',
+    appId: '1:13788532625:ios:c46e4e3ccecbcfbd635430',
     messagingSenderId: '13788532625',
     projectId: 'cheffy-e4f75',
     storageBucket: 'cheffy-e4f75.firebasestorage.app',
-    iosClientId: '13788532625-j0nl0mlq1rrtlk9b8vjkv2iu3oqoda1m.apps.googleusercontent.com',
-    iosBundleId: 'com.example.cheffy',
+    iosClientId: '13788532625-qh2h2ea1sst5to2526q2jj3gm64648e3.apps.googleusercontent.com',
+    iosBundleId: 'com.hizwayz.cheffy',
   );
 }
