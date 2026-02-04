@@ -230,4 +230,17 @@ class PreferencesService {
     final prefs = await getPreferences(odUserId);
     return prefs?.postalCode;
   }
+
+  /// Update household size
+  Future<void> updateHouseholdSize(String odUserId, int householdSize) async {
+    try {
+      await _preferencesCollection.doc(odUserId).update({
+        'householdSize': householdSize,
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      });
+    } catch (e) {
+      debugPrint('Error updating household size: $e');
+      rethrow;
+    }
+  }
 }

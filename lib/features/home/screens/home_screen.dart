@@ -9,6 +9,9 @@ import '../../../core/services/spoonacular_service.dart';
 import '../../../core/theme/app_colors.dart';
 import '../../chat/screens/chat_ingredients_screen.dart';
 import '../../meal_planning/screens/meal_plan_screen.dart';
+import '../../profile/screens/edit_profile_screen.dart';
+import '../../profile/screens/help_support_screen.dart';
+import '../../profile/screens/settings_screen.dart';
 import '../../recipes/screens/recipes_screen.dart';
 import '../../scan/screens/scan_ingredients_screen.dart';
 import '../../scan/screens/recipe_results_screen.dart' show RecipeDetailScreen, StringExtension;
@@ -36,12 +39,10 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             _HomeContent(
               authService: widget.authService,
-              onProfileTap: () => setState(() => _currentIndex = 4),
+              onProfileTap: () => setState(() => _currentIndex = 3),
             ),
             RecipesScreen(isActive: _currentIndex == 1),
             const MealPlanScreen(),
-            const _PlaceholderScreen(
-                title: 'Grocery List', icon: Icons.shopping_cart),
             _ProfileScreen(authService: widget.authService),
           ],
         ),
@@ -90,18 +91,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 onTap: () => setState(() => _currentIndex = 2),
               ),
               _NavItem(
-                icon: Icons.shopping_cart_outlined,
-                activeIcon: Icons.shopping_cart,
-                label: 'Grocery',
-                isActive: _currentIndex == 3,
-                onTap: () => setState(() => _currentIndex = 3),
-              ),
-              _NavItem(
                 icon: Icons.person_outline,
                 activeIcon: Icons.person,
                 label: 'Profile',
-                isActive: _currentIndex == 4,
-                onTap: () => setState(() => _currentIndex = 4),
+                isActive: _currentIndex == 3,
+                onTap: () => setState(() => _currentIndex = 3),
               ),
             ],
           ),
@@ -794,61 +788,48 @@ class _ActionCard extends StatelessWidget {
   }
 }
 
-/// Placeholder screen for tabs
-class _PlaceholderScreen extends StatelessWidget {
-  final String title;
-  final IconData icon;
-
-  const _PlaceholderScreen({
-    required this.title,
-    required this.icon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            icon,
-            size: 64,
-            color: AppColors.primary.withValues(alpha: 0.5),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            title,
-            style: GoogleFonts.poppins(
-              fontSize: 24,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Coming Soon',
-            style: GoogleFonts.poppins(
-              fontSize: 16,
-              color: AppColors.textSecondary,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// Profile screen
-class _ProfileScreen extends StatelessWidget {
+class _ProfileScreen extends StatefulWidget {
   final AuthService authService;
 
   const _ProfileScreen({required this.authService});
 
   @override
+  State<_ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<_ProfileScreen> {
+  // Key to force rebuild when returning from edit profile
+  Key _profileKey = UniqueKey();
+
+  void _refreshProfile() {
+    setState(() {
+      _profileKey = UniqueKey();
+    });
+  }
+
+  Future<void> _navigateToEditProfile() async {
+    final result = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EditProfileScreen(
+          authService: widget.authService as FirebaseAuthService,
+        ),
+      ),
+    );
+
+    // Refresh profile if changes were made
+    if (result == true) {
+      _refreshProfile();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final user = authService.currentUser;
+    final user = widget.authService.currentUser;
 
     return Padding(
+      key: _profileKey,
       padding: const EdgeInsets.all(24),
       child: Column(
         children: [
@@ -897,7 +878,7 @@ class _ProfileScreen extends StatelessWidget {
           _ProfileMenuItem(
             icon: Icons.person_outline,
             title: 'Edit Profile',
-            onTap: () {},
+            onTap: _navigateToEditProfile,
           ),
           _ProfileMenuItem(
             icon: Icons.notifications_outlined,
@@ -907,19 +888,33 @@ class _ProfileScreen extends StatelessWidget {
           _ProfileMenuItem(
             icon: Icons.settings_outlined,
             title: 'Settings',
-            onTap: () {},
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => SettingsScreen(
+                    authService: widget.authService as FirebaseAuthService,
+                  ),
+                ),
+              );
+            },
           ),
           _ProfileMenuItem(
             icon: Icons.help_outline,
             title: 'Help & Support',
-            onTap: () {},
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const HelpSupportScreen()),
+              );
+            },
           ),
           const Spacer(),
           // Sign out button
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
-              onPressed: () => authService.signOut(),
+              onPressed: () => widget.authService.signOut(),
               icon: const Icon(Icons.logout),
               label: Text(
                 'Sign Out',

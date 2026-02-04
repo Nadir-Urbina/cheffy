@@ -291,6 +291,138 @@ class FirebaseAuthService implements AuthService {
     return digest.toString();
   }
 
+  /// Update user's display name
+  Future<AuthResult> updateDisplayName(String displayName) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        return AuthResult.failure('No user logged in');
+      }
+
+      // Update Firebase Auth profile
+      await user.updateDisplayName(displayName);
+
+      // Update Firestore document
+      await _usersCollection.doc(user.uid).update({
+        'displayName': displayName,
+      });
+
+      return AuthResult.success(user);
+    } catch (e) {
+      debugPrint('Update display name error: $e');
+      return AuthResult.failure('Failed to update name');
+    }
+  }
+
+  /// Update user's profile photo URL
+  Future<AuthResult> updatePhotoUrl(String photoUrl) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        return AuthResult.failure('No user logged in');
+      }
+
+      // Update Firebase Auth profile
+      await user.updatePhotoURL(photoUrl);
+
+      // Update Firestore document
+      await _usersCollection.doc(user.uid).update({
+        'photoUrl': photoUrl,
+      });
+
+      return AuthResult.success(user);
+    } catch (e) {
+      debugPrint('Update photo URL error: $e');
+      return AuthResult.failure('Failed to update photo');
+    }
+  }
+
+  /// Update user's bio in Firestore
+  Future<AuthResult> updateBio(String bio) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) {
+        return AuthResult.failure('No user logged in');
+      }
+
+      await _usersCollection.doc(user.uid).update({
+        'bio': bio,
+      });
+
+      return AuthResult.success(user);
+    } catch (e) {
+      debugPrint('Update bio error: $e');
+      return AuthResult.failure('Failed to update bio');
+    }
+  }
+
+  /// Get user's bio from Firestore
+  Future<String?> getUserBio() async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return null;
+
+      final doc = await _usersCollection.doc(user.uid).get();
+      if (doc.exists) {
+        final data = doc.data();
+        return data?['bio'] as String?;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Get user bio error: $e');
+      return null;
+    }
+  }
+
+  /// Get user's auth provider
+  Future<String?> getUserProvider() async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return null;
+
+      final doc = await _usersCollection.doc(user.uid).get();
+      if (doc.exists) {
+        final data = doc.data();
+        return data?['provider'] as String?;
+      }
+      return null;
+    } catch (e) {
+      debugPrint('Get user provider error: $e');
+      return null;
+    }
+  }
+
+  /// Change password (only for email/password users)
+  Future<AuthResult> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null || user.email == null) {
+        return AuthResult.failure('No user logged in');
+      }
+
+      // Re-authenticate user first
+      final credential = EmailAuthProvider.credential(
+        email: user.email!,
+        password: currentPassword,
+      );
+
+      await user.reauthenticateWithCredential(credential);
+
+      // Update password
+      await user.updatePassword(newPassword);
+
+      return AuthResult.success(user);
+    } on FirebaseAuthException catch (e) {
+      return AuthResult.failure(_getErrorMessage(e.code));
+    } catch (e) {
+      debugPrint('Change password error: $e');
+      return AuthResult.failure('Failed to change password');
+    }
+  }
+
   /// Convert Firebase error codes to user-friendly messages
   String _getErrorMessage(String code) {
     switch (code) {
