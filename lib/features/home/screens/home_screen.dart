@@ -16,7 +16,9 @@ import '../../profile/screens/settings_screen.dart';
 import '../../recipes/screens/recipes_screen.dart';
 import '../../scan/screens/scan_ingredients_screen.dart';
 import '../../scan/screens/recipe_results_screen.dart' show RecipeDetailScreen;
+import '../../subscription/screens/paywall_screen.dart';
 import '../../video/screens/video_recipe_screen.dart';
+import '../../../core/services/subscription_service.dart';
 
 class HomeScreen extends StatefulWidget {
   final AuthService authService;
@@ -489,25 +491,38 @@ class _HomeContentState extends State<_HomeContent> {
     );
   }
 
-  void _navigateToScan(BuildContext context) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const ScanIngredientsScreen()),
-    );
+  void _navigateToScan(BuildContext context) async {
+    if (!SubscriptionService().isPremium) {
+      await PaywallScreen.show(context, featureName: 'Scan Your Ingredients');
+      if (!SubscriptionService().isPremium) return;
+    }
+    if (context.mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const ScanIngredientsScreen()),
+      );
+    }
   }
 
   void _navigateToChat(BuildContext context) {
+    // Chat is a FREE feature — no gate
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const ChatIngredientsScreen()),
     );
   }
 
-  void _navigateToVideo(BuildContext context) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const VideoRecipeScreen()),
-    );
+  void _navigateToVideo(BuildContext context) async {
+    if (!SubscriptionService().isPremium) {
+      await PaywallScreen.show(context, featureName: 'Video Recipe Extraction');
+      if (!SubscriptionService().isPremium) return;
+    }
+    if (context.mounted) {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (context) => const VideoRecipeScreen()),
+      );
+    }
   }
 }
 

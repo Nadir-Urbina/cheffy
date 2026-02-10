@@ -5,6 +5,7 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 import 'core/services/auth_service.dart';
 import 'core/services/preferences_service.dart';
+import 'core/services/subscription_service.dart';
 import 'core/theme/app_theme.dart';
 import 'features/auth/screens/login_screen.dart';
 import 'features/home/screens/home_screen.dart';
@@ -19,6 +20,9 @@ void main() async {
 
   // Initialize Firebase
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  // Initialize RevenueCat
+  await SubscriptionService().initialize();
 
   runApp(const CheffyApp());
 }
@@ -55,6 +59,8 @@ class AuthWrapper extends StatelessWidget {
 
         // User is logged in
         if (snapshot.hasData && snapshot.data != null) {
+          // Sync RevenueCat user identity with Firebase
+          SubscriptionService().loginUser(snapshot.data!.uid);
           return _OnboardingCheck(
             user: snapshot.data!,
             authService: authService,

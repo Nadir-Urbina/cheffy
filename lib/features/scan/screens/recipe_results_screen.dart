@@ -9,9 +9,11 @@ import '../../../core/services/instacart_service.dart';
 import '../../../core/services/preferences_service.dart';
 import '../../../core/services/recipe_history_service.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../../core/services/subscription_service.dart';
 import '../../cooking/screens/cooking_mode_screen.dart';
 import '../../instacart/widgets/retailer_selector.dart';
 import '../../meal_planning/widgets/schedule_meal_sheet.dart';
+import '../../subscription/screens/paywall_screen.dart';
 
 class RecipeResultsScreen extends StatelessWidget {
   final RecipeSuggestionResult result;
@@ -1411,7 +1413,12 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                     child: ElevatedButton.icon(
                       onPressed: _displayInstructions.isEmpty || _isGeneratingInstructions
                           ? null
-                          : () {
+                          : () async {
+                              // Check premium for cooking mode
+                              if (!SubscriptionService().isPremium) {
+                                await PaywallScreen.show(context, featureName: 'Cooking Mode');
+                                if (!SubscriptionService().isPremium) return;
+                              }
                               // Build a recipe with AI instructions if needed
                               final cookingRecipe = _instructionsAreAIGenerated
                                   ? Recipe(
@@ -1433,12 +1440,14 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                                       sourceName: recipe.sourceName,
                                     )
                                   : widget.recipe;
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => CookingModeScreen(recipe: cookingRecipe),
-                                ),
-                              );
+                              if (context.mounted) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => CookingModeScreen(recipe: cookingRecipe),
+                                  ),
+                                );
+                              }
                             },
                       icon: _isGeneratingInstructions
                           ? const SizedBox(
