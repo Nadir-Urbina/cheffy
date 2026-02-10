@@ -968,24 +968,26 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 12),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: _getMatchColor(),
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: Text(
-                                '${recipe.matchPercentage}%',
-                                style: GoogleFonts.poppins(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
+                            if (recipe.matchPercentage > 0) ...[
+                              const SizedBox(width: 12),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _getMatchColor(),
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                child: Text(
+                                  '${recipe.matchPercentage}%',
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
-                            ),
+                            ],
                           ],
                         ),
                         // "Cooked X times" badge
@@ -1069,7 +1071,10 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                         ),
                         const SizedBox(height: 12),
                         ...recipe.ingredients.map(
-                          (ing) => _IngredientItem(ingredient: ing),
+                          (ing) => _IngredientItem(
+                            ingredient: ing,
+                            showAvailability: recipe.matchPercentage > 0,
+                          ),
                         ),
                         const SizedBox(height: 28),
                         // Instructions
@@ -1533,19 +1538,33 @@ class _QuickStat extends StatelessWidget {
 
 class _IngredientItem extends StatelessWidget {
   final RecipeIngredient ingredient;
+  final bool showAvailability;
 
-  const _IngredientItem({required this.ingredient});
+  const _IngredientItem({
+    required this.ingredient,
+    this.showAvailability = true,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final bool showAsUnavailable = showAvailability && !ingredient.isAvailable;
+    final bool showAsAvailable = showAvailability && ingredient.isAvailable;
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
         children: [
           Icon(
-            ingredient.isAvailable ? Icons.check_circle : Icons.circle_outlined,
-            color:
-                ingredient.isAvailable ? AppColors.success : AppColors.warning,
+            showAsAvailable
+                ? Icons.check_circle
+                : showAsUnavailable
+                    ? Icons.circle_outlined
+                    : Icons.circle_outlined,
+            color: showAsAvailable
+                ? AppColors.success
+                : showAsUnavailable
+                    ? AppColors.warning
+                    : AppColors.textHint,
             size: 20,
           ),
           const SizedBox(width: 12),
@@ -1554,12 +1573,10 @@ class _IngredientItem extends StatelessWidget {
               ingredient.formatted,
               style: GoogleFonts.poppins(
                 fontSize: 14,
-                color:
-                    ingredient.isAvailable
-                        ? AppColors.textPrimary
-                        : AppColors.textSecondary,
-                decoration:
-                    ingredient.isAvailable ? null : TextDecoration.lineThrough,
+                color: showAsUnavailable
+                    ? AppColors.textSecondary
+                    : AppColors.textPrimary,
+                decoration: showAsUnavailable ? TextDecoration.lineThrough : null,
               ),
             ),
           ),

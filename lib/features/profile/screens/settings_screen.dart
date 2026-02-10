@@ -4,13 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:url_launcher/url_launcher.dart';
-
 import '../../../core/models/user_preferences.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/services/preferences_service.dart';
 import '../../../core/theme/app_colors.dart';
 import 'cooking_preferences_screen.dart';
+import 'privacy_policy_screen.dart';
+import 'terms_of_use_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
   final FirebaseAuthService authService;
@@ -28,10 +28,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isLoading = true;
   String? _provider;
   UserPreferences? _userPreferences;
-
-  // TODO: Update these URLs with your actual policy links
-  static const String _privacyPolicyUrl = 'https://turbinapps.com/privacy';
-  static const String _termsOfServiceUrl = 'https://turbinapps.com/terms';
 
   @override
   void initState() {
@@ -135,11 +131,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
   }
 
-  Future<void> _launchUrl(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
+  void _navigateToPrivacyPolicy() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const PrivacyPolicyScreen()),
+    );
+  }
+
+  void _navigateToTermsOfUse() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const TermsOfUseScreen()),
+    );
   }
 
   void _showDeleteAccountFlow() {
@@ -266,26 +269,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   icon: Icons.privacy_tip_outlined,
                   title: 'Privacy Policy',
                   subtitle: 'How we handle your data',
-                  onTap: () => _launchUrl(_privacyPolicyUrl),
-                  showChevron: false,
-                  trailing: const Icon(
-                    Icons.open_in_new,
-                    size: 18,
-                    color: AppColors.textSecondary,
-                  ),
+                  onTap: _navigateToPrivacyPolicy,
                 ),
                 const SizedBox(height: 12),
                 _buildSettingsTile(
                   icon: Icons.description_outlined,
-                  title: 'Terms of Service',
+                  title: 'Terms of Use',
                   subtitle: 'Rules and guidelines',
-                  onTap: () => _launchUrl(_termsOfServiceUrl),
-                  showChevron: false,
-                  trailing: const Icon(
-                    Icons.open_in_new,
-                    size: 18,
-                    color: AppColors.textSecondary,
-                  ),
+                  onTap: _navigateToTermsOfUse,
                 ),
 
                 const SizedBox(height: 32),

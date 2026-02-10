@@ -386,15 +386,18 @@ class _ChatIngredientsScreenState extends State<ChatIngredientsScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      appBar: _buildAppBar(),
-      body: Column(
-        children: [
-          if (_ingredients.isNotEmpty) _buildIngredientsSummary(),
-          Expanded(child: _buildChatList()),
-          _buildInputArea(),
-        ],
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        appBar: _buildAppBar(),
+        body: Column(
+          children: [
+            if (_ingredients.isNotEmpty) _buildIngredientsSummary(),
+            Expanded(child: _buildChatList()),
+            _buildInputArea(),
+          ],
+        ),
       ),
     );
   }

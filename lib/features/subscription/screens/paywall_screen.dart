@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
-
 import '../../../core/services/subscription_service.dart';
 import '../../../core/theme/app_colors.dart';
+import '../../profile/screens/privacy_policy_screen.dart';
+import '../../profile/screens/terms_of_use_screen.dart';
 
 /// Premium paywall screen with monthly/yearly options.
 class PaywallScreen extends StatefulWidget {
@@ -442,17 +443,69 @@ class _PaywallScreenState extends State<PaywallScreen> {
 
   Widget _buildLegalLinks() {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 40),
-      child: Text(
-        'Payment will be charged to your Apple ID account. '
-        'Subscription automatically renews unless canceled at least '
-        '24 hours before the end of the current period.',
-        style: GoogleFonts.poppins(
-          color: AppColors.textHint,
-          fontSize: 10,
-          height: 1.4,
-        ),
-        textAlign: TextAlign.center,
+      padding: const EdgeInsets.symmetric(horizontal: 32),
+      child: Column(
+        children: [
+          Text(
+            'Payment will be charged to your Apple ID account. '
+            'Subscription automatically renews unless canceled at least '
+            '24 hours before the end of the current period.',
+            style: GoogleFonts.poppins(
+              color: AppColors.textHint,
+              fontSize: 10,
+              height: 1.4,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              GestureDetector(
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const PrivacyPolicyScreen(),
+                  ),
+                ),
+                child: Text(
+                  'Privacy Policy',
+                  style: GoogleFonts.poppins(
+                    color: AppColors.textSecondary,
+                    fontSize: 11,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text(
+                  '|',
+                  style: GoogleFonts.poppins(
+                    color: AppColors.textHint,
+                    fontSize: 11,
+                  ),
+                ),
+              ),
+              GestureDetector(
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const TermsOfUseScreen(),
+                  ),
+                ),
+                child: Text(
+                  'Terms of Use',
+                  style: GoogleFonts.poppins(
+                    color: AppColors.textSecondary,
+                    fontSize: 11,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
