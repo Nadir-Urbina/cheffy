@@ -455,7 +455,7 @@ class _VideoRecipeResultScreenState extends State<VideoRecipeResultScreen> {
                         ),
                         _QuickStat(
                           icon: Icons.restaurant,
-                          value: recipe.difficulty.capitalize(),
+                          value: recipe.difficultyLabel,
                           label: 'Difficulty',
                         ),
                         _QuickStat(

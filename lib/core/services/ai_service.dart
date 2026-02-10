@@ -196,6 +196,71 @@ Respond ONLY with a JSON object in this exact format:
     );
   }
 
+  /// Generate step-by-step cooking instructions for a recipe that lacks them.
+  /// Uses GPT-4o to create realistic instructions based on recipe name,
+  /// ingredients, and description.
+  Future<List<String>> generateInstructions({
+    required String recipeName,
+    required List<String> ingredientNames,
+    String description = '',
+  }) async {
+    initialize();
+
+    try {
+      final ingredientList = ingredientNames.join(', ');
+
+      final response = await http.post(
+        Uri.parse('$_openAiBaseUrl/chat/completions'),
+        headers: {
+          'Authorization': 'Bearer $_apiKey',
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'model': _model,
+          'messages': [
+            {
+              'role': 'system',
+              'content': 'You are a professional chef. Generate clear, concise step-by-step cooking instructions. '
+                  'Each step should be a single actionable sentence. Return ONLY a JSON object with an "instructions" array of strings.',
+            },
+            {
+              'role': 'user',
+              'content': 'Generate cooking instructions for "$recipeName".\n\n'
+                  'Ingredients: $ingredientList\n\n'
+                  '${description.isNotEmpty ? 'Description: $description\n\n' : ''}'
+                  'Respond ONLY with a JSON object:\n'
+                  '{"instructions": ["Step 1 text", "Step 2 text", ...]}',
+            },
+          ],
+          'max_tokens': 1000,
+          'temperature': 0.4,
+        }),
+      );
+
+      if (response.statusCode != 200) {
+        final error = jsonDecode(response.body);
+        throw Exception(error['error']?['message'] ?? 'API request failed');
+      }
+
+      final data = jsonDecode(response.body);
+      final content = data['choices']?[0]?['message']?['content'] as String?;
+
+      if (content == null || content.isEmpty) {
+        throw Exception('No response from AI');
+      }
+
+      final jsonStr = _extractJson(content);
+      final parsed = jsonDecode(jsonStr) as Map<String, dynamic>;
+      final instructions = List<String>.from(parsed['instructions'] ?? []);
+
+      debugPrint('🤖 Generated ${instructions.length} instructions for "$recipeName"');
+      return instructions;
+    } catch (e) {
+      debugPrint('Error generating instructions: $e');
+      rethrow;
+    }
+  }
+
   /// Extract JSON from a response that might contain markdown or other text
   String _extractJson(String text) {
     // Try to find JSON in markdown code blocks

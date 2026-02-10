@@ -6,7 +6,7 @@ class Recipe {
   final String cuisineType;
   final int prepTimeMinutes;
   final int cookTimeMinutes;
-  final String difficulty; // easy, medium, hard
+  final String difficulty; // beginner, intermediate, advanced
   final int servings;
   final List<RecipeIngredient> ingredients;
   final List<String> instructions;
@@ -14,6 +14,8 @@ class Recipe {
   final List<String> missingIngredients;
   final String? imageUrl;
   final NutritionInfo? nutrition;
+  final String? sourceUrl;
+  final String? sourceName;
 
   Recipe({
     required this.id,
@@ -30,7 +32,41 @@ class Recipe {
     this.missingIngredients = const [],
     this.imageUrl,
     this.nutrition,
+    this.sourceUrl,
+    this.sourceName,
   });
+
+  /// Normalizes difficulty to the current naming convention.
+  /// Handles legacy values (easy/medium/hard) from cached or stored data.
+  String get normalizedDifficulty {
+    switch (difficulty.toLowerCase()) {
+      case 'easy':
+      case 'beginner':
+        return 'beginner';
+      case 'medium':
+      case 'intermediate':
+        return 'intermediate';
+      case 'hard':
+      case 'advanced':
+        return 'advanced';
+      default:
+        return 'intermediate';
+    }
+  }
+
+  /// User-facing difficulty label -- encouraging and motivational.
+  String get difficultyLabel {
+    switch (normalizedDifficulty) {
+      case 'beginner':
+        return 'Easy-Peasy';
+      case 'intermediate':
+        return 'Getting Fancy';
+      case 'advanced':
+        return '💪🏼 Up for a Challenge';
+      default:
+        return 'Getting Fancy';
+    }
+  }
 
   int get totalTimeMinutes => prepTimeMinutes + cookTimeMinutes;
 
@@ -50,7 +86,7 @@ class Recipe {
       cuisineType: json['cuisineType'] ?? 'other',
       prepTimeMinutes: json['prepTimeMinutes'] ?? 0,
       cookTimeMinutes: json['cookTimeMinutes'] ?? 0,
-      difficulty: json['difficulty'] ?? 'medium',
+      difficulty: json['difficulty'] ?? 'intermediate',
       servings: json['servings'] ?? 2,
       ingredients: (json['ingredients'] as List<dynamic>?)
               ?.map((e) => RecipeIngredient.fromJson(e as Map<String, dynamic>))
@@ -63,6 +99,8 @@ class Recipe {
       nutrition: json['nutrition'] != null
           ? NutritionInfo.fromJson(json['nutrition'])
           : null,
+      sourceUrl: json['sourceUrl'],
+      sourceName: json['sourceName'],
     );
   }
 
@@ -82,6 +120,8 @@ class Recipe {
       'missingIngredients': missingIngredients,
       'imageUrl': imageUrl,
       'nutrition': nutrition?.toJson(),
+      'sourceUrl': sourceUrl,
+      'sourceName': sourceName,
     };
   }
 }

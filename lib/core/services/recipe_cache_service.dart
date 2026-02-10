@@ -9,9 +9,9 @@ class RecipeCacheService {
   static const String _categoryRecipesPrefix = 'cache_category_';
   static const String _timestampSuffix = '_timestamp';
 
-  // Cache durations
-  static const Duration popularRecipesCacheDuration = Duration(hours: 4);
-  static const Duration categoryRecipesCacheDuration = Duration(hours: 3);
+  // Cache durations (max 1 hour per Spoonacular API Terms of Use)
+  static const Duration popularRecipesCacheDuration = Duration(minutes: 55);
+  static const Duration categoryRecipesCacheDuration = Duration(minutes: 55);
 
   SharedPreferences? _prefs;
 

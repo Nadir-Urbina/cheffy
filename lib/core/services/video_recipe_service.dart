@@ -240,7 +240,7 @@ Extract the recipe and respond with ONLY a JSON object in this exact format:
   "cuisineType": "italian/mexican/chinese/indian/american/french/thai/mediterranean/other",
   "prepTimeMinutes": 15,
   "cookTimeMinutes": 30,
-  "difficulty": "easy/medium/hard",
+  "difficulty": "beginner/intermediate/advanced",
   "servings": 4,
   "ingredients": [
     {"name": "ingredient name", "quantity": 2.0, "unit": "cups"},
@@ -316,7 +316,7 @@ Respond with ONLY a JSON object in this exact format:
   "cuisineType": "italian/mexican/chinese/indian/american/french/thai/mediterranean/other",
   "prepTimeMinutes": 15,
   "cookTimeMinutes": 30,
-  "difficulty": "easy/medium/hard",
+  "difficulty": "beginner/intermediate/advanced",
   "servings": 4,
   "ingredients": [
     {"name": "ingredient name", "quantity": 2.0, "unit": "cups"},
@@ -445,7 +445,7 @@ NOTE: Since there's no transcript, use the video title and thumbnail to infer wh
       cuisineType: data['cuisineType'] ?? 'other',
       prepTimeMinutes: data['prepTimeMinutes'] ?? 15,
       cookTimeMinutes: data['cookTimeMinutes'] ?? 30,
-      difficulty: data['difficulty'] ?? 'medium',
+      difficulty: data['difficulty'] ?? 'intermediate',
       servings: data['servings'] ?? 4,
       ingredients: ingredients,
       instructions: instructions,

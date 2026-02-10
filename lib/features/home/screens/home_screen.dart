@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../../core/models/recipe_model.dart';
@@ -14,7 +15,7 @@ import '../../profile/screens/help_support_screen.dart';
 import '../../profile/screens/settings_screen.dart';
 import '../../recipes/screens/recipes_screen.dart';
 import '../../scan/screens/scan_ingredients_screen.dart';
-import '../../scan/screens/recipe_results_screen.dart' show RecipeDetailScreen, StringExtension;
+import '../../scan/screens/recipe_results_screen.dart' show RecipeDetailScreen;
 import '../../video/screens/video_recipe_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -178,53 +179,52 @@ class _HomeContentState extends State<_HomeContent> {
   }
 
   /// Sort recipes based on user's skill level preference
-  /// Beginner: 3 easy, 1 medium, 1 hard
-  /// Intermediate: 1 easy, 3 medium, 1 hard
-  /// Advanced: 1 easy, 1 medium, 3 hard
+  /// Beginner: 3 beginner, 1 intermediate, 1 advanced
+  /// Intermediate: 1 beginner, 3 intermediate, 1 advanced
+  /// Advanced: 1 beginner, 1 intermediate, 3 advanced
+  ///
+  /// Results are always ordered: beginner first, then intermediate, then advanced
   List<Recipe> _sortBySkillLevel(List<Recipe> recipes) {
     if (recipes.isEmpty) return recipes;
     
     final skillLevel = _userPreferences?.skillLevel ?? CookingSkillLevel.beginner;
     
     // Separate recipes by difficulty
-    final easy = recipes.where((r) => r.difficulty.toLowerCase() == 'easy').toList();
-    final medium = recipes.where((r) => r.difficulty.toLowerCase() == 'medium').toList();
-    final hard = recipes.where((r) => r.difficulty.toLowerCase() == 'hard').toList();
+    final beginner = recipes.where((r) => r.normalizedDifficulty == 'beginner').toList();
+    final intermediate = recipes.where((r) => r.normalizedDifficulty == 'intermediate').toList();
+    final advanced = recipes.where((r) => r.normalizedDifficulty == 'advanced').toList();
     
     // Determine counts based on skill level
-    int easyCount, mediumCount, hardCount;
+    int beginnerCount, intermediateCount, advancedCount;
     switch (skillLevel) {
       case CookingSkillLevel.beginner:
-        easyCount = 3;
-        mediumCount = 1;
-        hardCount = 1;
+        beginnerCount = 3;
+        intermediateCount = 1;
+        advancedCount = 1;
         break;
       case CookingSkillLevel.intermediate:
-        easyCount = 1;
-        mediumCount = 3;
-        hardCount = 1;
+        beginnerCount = 1;
+        intermediateCount = 3;
+        advancedCount = 1;
         break;
       case CookingSkillLevel.advanced:
-        easyCount = 1;
-        mediumCount = 1;
-        hardCount = 3;
+        beginnerCount = 1;
+        intermediateCount = 1;
+        advancedCount = 3;
         break;
     }
     
-    // Build result list prioritizing user's skill level
+    // Build result list in order: beginner -> intermediate -> advanced
     final result = <Recipe>[];
-    result.addAll(easy.take(easyCount));
-    result.addAll(medium.take(mediumCount));
-    result.addAll(hard.take(hardCount));
+    result.addAll(beginner.take(beginnerCount));
+    result.addAll(intermediate.take(intermediateCount));
+    result.addAll(advanced.take(advancedCount));
     
     // If we don't have enough in preferred categories, fill from others
     if (result.length < 5) {
       final remaining = recipes.where((r) => !result.contains(r)).toList();
       result.addAll(remaining.take(5 - result.length));
     }
-    
-    // Shuffle to mix difficulties
-    result.shuffle();
     
     return result;
   }
@@ -331,35 +331,35 @@ class _HomeContentState extends State<_HomeContent> {
   }
 
   Widget _buildActionCards(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: _ActionCard(
-            svgPath: 'assets/icons/home_page_feature_icons/camera.svg',
-            title: 'Scan Your\nIngredients',
-            subtitle: 'Take a photo of your\nfridge or pantry',
-            onTap: () => _navigateToScan(context),
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: _ActionCard(
+              svgPath: 'assets/icons/home_page_feature_icons/camera.svg',
+              title: 'Scan Your\nIngredients',
+              onTap: () => _navigateToScan(context),
+            ),
           ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _ActionCard(
-            svgPath: 'assets/icons/home_page_feature_icons/clapboard.svg',
-            title: 'Paste a\nCooking Video',
-            subtitle: 'Turn any video into\na recipe',
-            onTap: () => _navigateToVideo(context),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _ActionCard(
+              svgPath: 'assets/icons/home_page_feature_icons/clapboard.svg',
+              title: 'Paste a\nCooking Video',
+              onTap: () => _navigateToVideo(context),
+            ),
           ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _ActionCard(
-            svgPath: 'assets/icons/home_page_feature_icons/chat_bubble.svg',
-            title: 'Chat What\nYou Have',
-            subtitle: 'Type or speak\ningredients',
-            onTap: () => _navigateToChat(context),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _ActionCard(
+              svgPath: 'assets/icons/home_page_feature_icons/chat_bubble.svg',
+              title: 'Chat What\nYou Have',
+              onTap: () => _navigateToChat(context),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -576,7 +576,23 @@ class _PopularRecipeCard extends StatelessWidget {
                       height: 1.3,
                     ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: _getDifficultyColor(recipe.normalizedDifficulty).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          recipe.difficultyLabel,
+                          style: GoogleFonts.poppins(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w500,
+                            color: _getDifficultyColor(recipe.normalizedDifficulty),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
                   Row(
                     children: [
                       Icon(Icons.schedule, size: 14, color: AppColors.textSecondary),
@@ -586,22 +602,6 @@ class _PopularRecipeCard extends StatelessWidget {
                         style: GoogleFonts.poppins(
                           fontSize: 11,
                           color: AppColors.textSecondary,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: _getDifficultyColor(recipe.difficulty).withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          recipe.difficulty.capitalize(),
-                          style: GoogleFonts.poppins(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w500,
-                            color: _getDifficultyColor(recipe.difficulty),
-                          ),
                         ),
                       ),
                     ],
@@ -631,12 +631,12 @@ class _PopularRecipeCard extends StatelessWidget {
 
   Color _getDifficultyColor(String difficulty) {
     switch (difficulty.toLowerCase()) {
-      case 'easy':
-        return AppColors.success;
-      case 'medium':
-        return AppColors.warning;
-      case 'hard':
-        return AppColors.error;
+      case 'beginner':
+        return const Color(0xFF4A9BD9); // Calm blue -- inviting
+      case 'intermediate':
+        return AppColors.primary;       // App green -- positive
+      case 'advanced':
+        return const Color(0xFF8B5CF6); // Vibrant purple -- exciting
       default:
         return AppColors.textSecondary;
     }
@@ -709,22 +709,23 @@ class _RecipeCardSkeleton extends StatelessWidget {
 class _ActionCard extends StatelessWidget {
   final String svgPath;
   final String title;
-  final String subtitle;
   final VoidCallback onTap;
 
   const _ActionCard({
     required this.svgPath,
     required this.title,
-    required this.subtitle,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
       child: Container(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 16),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
@@ -760,25 +761,15 @@ class _ActionCard extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             Text(
               title,
               textAlign: TextAlign.center,
               style: GoogleFonts.poppins(
-                fontSize: 10,
+                fontSize: 12,
                 fontWeight: FontWeight.w600,
                 color: AppColors.textPrimary,
-                height: 1.2,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.poppins(
-                fontSize: 8,
-                color: AppColors.textSecondary,
-                height: 1.2,
+                height: 1.3,
               ),
             ),
           ],
@@ -1001,7 +992,10 @@ class _CategoryChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: () {
+        HapticFeedback.selectionClick();
+        onTap();
+      },
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1063,7 +1057,10 @@ class _NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: () {
+        HapticFeedback.lightImpact();
+        onTap();
+      },
       behavior: HitTestBehavior.opaque,
       child: SizedBox(
         width: 64,

@@ -207,53 +207,56 @@ class _ScanIngredientsScreenState extends State<ScanIngredientsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: AppColors.textPrimary),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Text(
-          'Scan Ingredients',
-          style: GoogleFonts.poppins(
-            color: AppColors.textPrimary,
-            fontWeight: FontWeight.w600,
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Scaffold(
+        extendBodyBehindAppBar: true,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_ios, color: AppColors.textPrimary),
+            onPressed: () => Navigator.pop(context),
           ),
+          title: Text(
+            'Scan Ingredients',
+            style: GoogleFonts.poppins(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          centerTitle: true,
         ),
-        centerTitle: true,
-      ),
-      body: Container(
-        decoration: AppColors.freshGradientDecoration,
-        child: SafeArea(
-          child: Column(
-            children: [
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Header instruction
-                      _buildHeader(),
-                      const SizedBox(height: 24),
-                      // Image picker section
-                      _buildImageSection(),
-                      const SizedBox(height: 24),
-                      // Additional items section
-                      _buildAdditionalItemsSection(),
-                      const SizedBox(height: 24),
-                      // Tips section
-                      _buildTipsSection(),
-                    ],
+        body: Container(
+          decoration: AppColors.freshGradientDecoration,
+          child: SafeArea(
+            child: Column(
+              children: [
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Header instruction
+                        _buildHeader(),
+                        const SizedBox(height: 24),
+                        // Image picker section
+                        _buildImageSection(),
+                        const SizedBox(height: 24),
+                        // Additional items section
+                        _buildAdditionalItemsSection(),
+                        const SizedBox(height: 24),
+                        // Tips section
+                        _buildTipsSection(),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              // Analyze button
-              _buildAnalyzeButton(),
-            ],
+                // Analyze button
+                _buildAnalyzeButton(),
+              ],
+            ),
           ),
         ),
       ),

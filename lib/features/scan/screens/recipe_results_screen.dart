@@ -2,7 +2,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../../../core/models/recipe_model.dart';
+import '../../../core/services/ai_service.dart';
 import '../../../core/services/instacart_service.dart';
 import '../../../core/services/preferences_service.dart';
 import '../../../core/services/recipe_history_service.dart';
@@ -516,7 +518,7 @@ class _RecipeCardState extends State<_RecipeCard> {
                       const SizedBox(width: 8),
                       _StatChip(
                         icon: Icons.restaurant,
-                        label: recipe.difficulty.capitalize(),
+                        label: recipe.difficultyLabel,
                       ),
                       const SizedBox(width: 8),
                       _StatChip(
@@ -735,17 +737,59 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
   final _instacartService = InstacartService();
   final _preferencesService = PreferencesService();
   final _historyService = RecipeHistoryService();
+  final _aiService = AIService();
   bool _isLoadingInstacart = false;
   String? _preferredRetailerName;
   int _timesCooked = 0;
 
+  // AI-generated instructions state
+  List<String> _generatedInstructions = [];
+  bool _isGeneratingInstructions = false;
+  bool _instructionsAreAIGenerated = false;
+
   Recipe get recipe => widget.recipe;
+
+  /// The instructions to display: original if available, otherwise AI-generated
+  List<String> get _displayInstructions =>
+      recipe.instructions.isNotEmpty ? recipe.instructions : _generatedInstructions;
 
   @override
   void initState() {
     super.initState();
     _loadPreferredRetailer();
     _loadTimesCooked();
+    _generateInstructionsIfNeeded();
+  }
+
+  Future<void> _generateInstructionsIfNeeded() async {
+    if (recipe.instructions.isNotEmpty) return;
+
+    setState(() => _isGeneratingInstructions = true);
+
+    try {
+      final ingredientNames = recipe.ingredients
+          .map((ing) => ing.name)
+          .where((name) => name.isNotEmpty)
+          .toList();
+
+      final instructions = await _aiService.generateInstructions(
+        recipeName: recipe.name,
+        ingredientNames: ingredientNames,
+        description: recipe.description,
+      );
+
+      if (mounted && instructions.isNotEmpty) {
+        setState(() {
+          _generatedInstructions = instructions;
+          _instructionsAreAIGenerated = true;
+          _isGeneratingInstructions = false;
+        });
+      } else {
+        if (mounted) setState(() => _isGeneratingInstructions = false);
+      }
+    } catch (e) {
+      if (mounted) setState(() => _isGeneratingInstructions = false);
+    }
   }
 
   Future<void> _loadTimesCooked() async {
@@ -1001,7 +1045,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                             ),
                             _QuickStat(
                               icon: Icons.restaurant,
-                              value: recipe.difficulty.capitalize(),
+                              value: recipe.difficultyLabel,
                               label: 'Difficulty',
                             ),
                             _QuickStat(
@@ -1035,11 +1079,153 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                             color: AppColors.textPrimary,
                           ),
                         ),
+                        if (_instructionsAreAIGenerated) ...[
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.purple.shade50,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: Colors.purple.shade100,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.auto_awesome,
+                                  size: 14,
+                                  color: Colors.purple.shade400,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'AI-generated instructions',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 12,
+                                    color: Colors.purple.shade400,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 12),
-                        ...recipe.instructions.asMap().entries.map(
-                          (entry) => _InstructionStep(
-                            stepNumber: entry.key + 1,
-                            instruction: entry.value,
+                        if (_isGeneratingInstructions)
+                          Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 24),
+                            child: Column(
+                              children: [
+                                const SizedBox(
+                                  width: 28,
+                                  height: 28,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2.5,
+                                    color: AppColors.primary,
+                                  ),
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  'Generating instructions...',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 14,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        else
+                          ..._displayInstructions.asMap().entries.map(
+                            (entry) => _InstructionStep(
+                              stepNumber: entry.key + 1,
+                              instruction: entry.value,
+                            ),
+                          ),
+                        // Source attribution (required by Spoonacular Terms)
+                        if (recipe.sourceName != null || recipe.sourceUrl != null) ...[
+                          const SizedBox(height: 20),
+                          const Divider(height: 1),
+                          const SizedBox(height: 16),
+                          GestureDetector(
+                            onTap: recipe.sourceUrl != null
+                                ? () async {
+                                    final uri = Uri.tryParse(recipe.sourceUrl!);
+                                    if (uri != null && await canLaunchUrl(uri)) {
+                                      await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                    }
+                                  }
+                                : null,
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.open_in_new,
+                                  size: 16,
+                                  color: AppColors.primary,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text.rich(
+                                    TextSpan(
+                                      text: 'Recipe by ',
+                                      style: GoogleFonts.poppins(
+                                        fontSize: 13,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                      children: [
+                                        TextSpan(
+                                          text: recipe.sourceName ?? 'Original Author',
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 13,
+                                            color: AppColors.primary,
+                                            fontWeight: FontWeight.w500,
+                                            decoration: recipe.sourceUrl != null
+                                                ? TextDecoration.underline
+                                                : null,
+                                            decorationColor: AppColors.primary,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        // Disclaimer (required by Spoonacular Terms)
+                        const SizedBox(height: 20),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.grey.shade200),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(
+                                Icons.info_outline,
+                                size: 16,
+                                color: AppColors.textHint,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Nutritional information, allergy data, and cost estimates are approximate and may not be fully accurate. Always verify ingredients if you have food allergies or dietary restrictions.',
+                                  style: GoogleFonts.poppins(
+                                    fontSize: 11,
+                                    color: AppColors.textHint,
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         const SizedBox(height: 100), // Space for bottom bar
@@ -1223,17 +1409,49 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                   // Start Cooking button
                   Expanded(
                     child: ElevatedButton.icon(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => CookingModeScreen(recipe: widget.recipe),
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.play_arrow, size: 22),
+                      onPressed: _displayInstructions.isEmpty || _isGeneratingInstructions
+                          ? null
+                          : () {
+                              // Build a recipe with AI instructions if needed
+                              final cookingRecipe = _instructionsAreAIGenerated
+                                  ? Recipe(
+                                      id: recipe.id,
+                                      name: recipe.name,
+                                      description: recipe.description,
+                                      cuisineType: recipe.cuisineType,
+                                      prepTimeMinutes: recipe.prepTimeMinutes,
+                                      cookTimeMinutes: recipe.cookTimeMinutes,
+                                      difficulty: recipe.difficulty,
+                                      servings: recipe.servings,
+                                      ingredients: recipe.ingredients,
+                                      instructions: _generatedInstructions,
+                                      matchPercentage: recipe.matchPercentage,
+                                      missingIngredients: recipe.missingIngredients,
+                                      imageUrl: recipe.imageUrl,
+                                      nutrition: recipe.nutrition,
+                                      sourceUrl: recipe.sourceUrl,
+                                      sourceName: recipe.sourceName,
+                                    )
+                                  : widget.recipe;
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => CookingModeScreen(recipe: cookingRecipe),
+                                ),
+                              );
+                            },
+                      icon: _isGeneratingInstructions
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                valueColor: AlwaysStoppedAnimation(Colors.white),
+                              ),
+                            )
+                          : const Icon(Icons.play_arrow, size: 22),
                       label: Text(
-                        'Start Cooking',
+                        _isGeneratingInstructions ? 'Preparing...' : 'Start Cooking',
                         style: GoogleFonts.poppins(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
@@ -1242,6 +1460,8 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primary,
                         foregroundColor: Colors.white,
+                        disabledBackgroundColor: AppColors.primary.withValues(alpha: 0.5),
+                        disabledForegroundColor: Colors.white70,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14),

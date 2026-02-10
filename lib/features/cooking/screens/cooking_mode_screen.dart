@@ -38,9 +38,8 @@ class _CookingModeScreenState extends State<CookingModeScreen>
   
   bool _isListening = false;
   bool _isSpeaking = false;
-  String? _voiceQuery;
-  String? _voiceResponse;
-  bool _showVoiceOverlay = false;
+  bool _conversationalMode = false;
+  bool _quickCommandExecuted = false;
   
   StreamSubscription<List<CookingTimer>>? _timerSubscription;
   List<CookingTimer> _activeTimers = [];
@@ -78,6 +77,8 @@ class _CookingModeScreenState extends State<CookingModeScreen>
 
   @override
   void dispose() {
+    _voiceService.stop();
+    _voiceService.stopListening();
     WakelockPlus.disable();
     _timerSubscription?.cancel();
     _pageController.dispose();
@@ -115,6 +116,12 @@ class _CookingModeScreenState extends State<CookingModeScreen>
       return;
     }
     
+    // Delegate to conversational cycle if active
+    if (_conversationalMode) {
+      _readCurrentStepConversational();
+      return;
+    }
+    
     setState(() => _isSpeaking = true);
     
     final stepText = "Step ${_session.currentStepIndex + 1}. ${_session.currentInstruction}";
@@ -125,126 +132,215 @@ class _CookingModeScreenState extends State<CookingModeScreen>
     }
   }
 
-  Future<void> _startListening() async {
-    if (!_voiceService.isSttAvailable) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Voice input not available'),
-          backgroundColor: AppColors.warning,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-        ),
-      );
-      return;
-    }
-    
+  // ==================== CONVERSATIONAL MODE ====================
+
+  /// Toggle conversational mode on/off.
+  /// When ON: reads the current step aloud, then listens for commands,
+  /// creating a continuous read → listen → act → read cycle.
+  void _toggleConversationalMode() {
     HapticFeedback.mediumImpact();
+    final enabling = !_conversationalMode;
+
     setState(() {
-      _isListening = true;
-      _showVoiceOverlay = true;
-      _voiceQuery = null;
-      _voiceResponse = null;
+      _conversationalMode = enabling;
     });
-    
-    // Set up callbacks before starting
-    _voiceService.onSpeechResult = (text) {
-      _handleVoiceResult(text);
-    };
-    _voiceService.onError = (error) {
-      if (mounted) {
-        setState(() {
-          _isListening = false;
-          _voiceResponse = "I didn't catch that. Try again.";
-        });
-      }
-    };
-    _voiceService.onSpeechEnd = () {
-      if (mounted) {
-        setState(() => _isListening = false);
-      }
-    };
-    
-    await _voiceService.startListening();
+
+    if (enabling) {
+      // Kick off the read → listen cycle
+      _readCurrentStepConversational();
+    } else {
+      // Stop everything cleanly
+      _voiceService.stop();
+      _voiceService.stopListening();
+      setState(() {
+        _isSpeaking = false;
+        _isListening = false;
+      });
+    }
   }
 
-  void _stopListening() {
-    _voiceService.stopListening();
-    setState(() => _isListening = false);
-  }
+  /// Read the current step aloud, then start listening when done.
+  Future<void> _readCurrentStepConversational() async {
+    if (!_conversationalMode || !mounted) return;
 
-  Future<void> _handleVoiceResult(String text) async {
+    // Stop any current speech/listening for a clean start
+    if (_isListening) await _voiceService.stopListening();
+    if (_isSpeaking) await _voiceService.stop();
+
     setState(() {
+      _isSpeaking = true;
       _isListening = false;
-      _voiceQuery = text;
     });
-    
-    // Check for navigation commands
-    final lowerText = text.toLowerCase();
-    
-    if (lowerText.contains('next step') || lowerText.contains('next')) {
-      _nextStep();
-      setState(() {
-        _voiceResponse = "Moving to next step";
-        _showVoiceOverlay = false;
-      });
-      return;
-    }
-    
-    if (lowerText.contains('previous step') || lowerText.contains('go back') || lowerText.contains('back')) {
-      _previousStep();
-      setState(() {
-        _voiceResponse = "Going back";
-        _showVoiceOverlay = false;
-      });
-      return;
-    }
-    
-    if (lowerText.contains('read') || lowerText.contains('repeat')) {
-      setState(() => _showVoiceOverlay = false);
-      _readCurrentStep();
-      return;
-    }
-    
-    // Check for timer commands
-    if (lowerText.contains('start timer') || lowerText.contains('set timer')) {
-      final times = TimerService.parseTimesFromText(_session.currentInstruction);
-      if (times.isNotEmpty) {
-        _createTimer(times.first);
-        setState(() {
-          _voiceResponse = "Starting ${times.first.formattedDuration} timer";
-        });
-        await _voiceService.speak("Timer started for ${times.first.formattedDuration}");
-      } else {
-        setState(() {
-          _voiceResponse = "No timer found in this step";
-        });
+
+    final stepText = "Step ${_session.currentStepIndex + 1}. ${_session.currentInstruction}";
+    await _voiceService.speak(stepText);
+
+    if (mounted) {
+      setState(() => _isSpeaking = false);
+      // Brief pause so the mic doesn't pick up speaker echo
+      await Future.delayed(const Duration(milliseconds: 400));
+      if (mounted && _conversationalMode) {
+        _startListeningConversational();
       }
-      _dismissVoiceOverlayDelayed();
-      return;
     }
-    
-    // Try to answer ingredient question
-    final answer = _queryService.answerQuery(text);
-    if (answer != null) {
-      setState(() => _voiceResponse = answer);
-      await _voiceService.speak(answer);
-      _dismissVoiceOverlayDelayed();
-      return;
-    }
-    
-    // Unknown query
-    setState(() {
-      _voiceResponse = "I'm not sure about that. Try asking about an ingredient.";
-    });
-    _dismissVoiceOverlayDelayed();
   }
 
-  void _dismissVoiceOverlayDelayed() {
-    Future.delayed(const Duration(seconds: 3), () {
-      if (mounted && _showVoiceOverlay) {
-        setState(() => _showVoiceOverlay = false);
+  /// Start listening with quick command matching on partial results.
+  Future<void> _startListeningConversational() async {
+    if (!_voiceService.isSttAvailable || !_conversationalMode || !mounted) return;
+
+    _quickCommandExecuted = false;
+    setState(() => _isListening = true);
+
+    // Partial results → instant command matching
+    _voiceService.onPartialSpeechResult = (text) {
+      if (_quickCommandExecuted) return;
+      final command = _matchQuickCommand(text);
+      if (command != null) {
+        _quickCommandExecuted = true;
+        // Detach callbacks to prevent interference, then cancel
+        _voiceService.onSpeechEnd = null;
+        _voiceService.onSpeechResult = null;
+        _voiceService.cancelListening();
+        if (mounted) {
+          setState(() => _isListening = false);
+          _executeQuickCommand(command);
+        }
+      }
+    };
+
+    // Final result fallback (if no partial matched a command)
+    _voiceService.onSpeechResult = (text) {
+      if (_quickCommandExecuted) return;
+      // Try matching the final result too
+      final command = _matchQuickCommand(text);
+      if (command != null) {
+        _quickCommandExecuted = true;
+        if (mounted) {
+          setState(() => _isListening = false);
+          _executeQuickCommand(command);
+        }
+      } else {
+        // Unrecognized — just restart listening
+        if (mounted) {
+          setState(() => _isListening = false);
+          _restartListeningAfterDelay();
+        }
+      }
+    };
+
+    _voiceService.onError = (error) {
+      if (mounted && !_quickCommandExecuted) {
+        setState(() => _isListening = false);
+        // Longer delay on errors (e.g. silence/no-match) to avoid rapid cycling
+        if (_conversationalMode) {
+          Future.delayed(const Duration(seconds: 1), () {
+            if (mounted && _conversationalMode && !_isSpeaking && !_isListening) {
+              _startListeningConversational();
+            }
+          });
+        }
+      }
+    };
+
+    _voiceService.onSpeechEnd = () {
+      if (mounted && !_quickCommandExecuted) {
+        setState(() => _isListening = false);
+        _restartListeningAfterDelay();
+      }
+    };
+
+    await _voiceService.startListeningForCommands();
+  }
+
+  /// Speak a response, then restart listening if in conversational mode.
+  Future<void> _speakAndContinue(String text) async {
+    if (_isListening) await _voiceService.stopListening();
+    setState(() {
+      _isSpeaking = true;
+      _isListening = false;
+    });
+    await _voiceService.speak(text);
+    if (mounted) {
+      setState(() => _isSpeaking = false);
+      _restartListeningAfterDelay();
+    }
+  }
+
+  /// Restart listening after a brief delay (conversational mode only).
+  void _restartListeningAfterDelay() {
+    if (!_conversationalMode || !mounted) return;
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (mounted && _conversationalMode && !_isSpeaking && !_isListening) {
+        _startListeningConversational();
       }
     });
+  }
+
+  /// Check if recognized text matches a known quick voice command.
+  /// Returns the command name or null if no match.
+  String? _matchQuickCommand(String text) {
+    final lower = text.toLowerCase().trim();
+    if (lower.isEmpty) return null;
+
+    // Next: "next", "next step", "keep going", "continue"
+    if (lower.contains('next') || lower.contains('keep going') || lower == 'continue') {
+      return 'next';
+    }
+    // Back: "back", "go back", "previous"
+    if (lower.contains('back') || lower.contains('previous')) {
+      return 'back';
+    }
+    // Stop: "stop", "pause", "turn off"
+    if (lower.contains('stop') || lower.contains('pause') || lower.contains('turn off')) {
+      return 'stop';
+    }
+    // Repeat: "repeat", "read again", "read it"
+    if (lower.contains('repeat') || lower.contains('read')) {
+      return 'repeat';
+    }
+    // Finish: "finish", "done", "i'm done"
+    if (lower.contains('finish') || lower.contains('done')) {
+      return 'finish';
+    }
+
+    return null;
+  }
+
+  /// Execute a matched quick command immediately.
+  void _executeQuickCommand(String command) {
+    switch (command) {
+      case 'next':
+        if (_session.isLastStep) {
+          _speakAndContinue("You're on the last step. Say 'finish' when you're done!");
+        } else {
+          _nextStep(); // onPageChanged handles the conversational cycle
+        }
+        break;
+      case 'back':
+        if (!_session.isFirstStep) {
+          _previousStep(); // onPageChanged handles the conversational cycle
+        } else {
+          _restartListeningAfterDelay();
+        }
+        break;
+      case 'stop':
+        _toggleConversationalMode();
+        break;
+      case 'repeat':
+        _readCurrentStepConversational();
+        break;
+      case 'finish':
+        if (_session.isLastStep) {
+          _toggleConversationalMode();
+          _finishCooking();
+        } else {
+          _restartListeningAfterDelay();
+        }
+        break;
+      default:
+        _restartListeningAfterDelay();
+    }
   }
 
   void _createTimer(ParsedTime time) {
@@ -257,7 +353,12 @@ class _CookingModeScreenState extends State<CookingModeScreen>
   }
 
   void _announceTimerComplete(CookingTimer timer) async {
-    await _voiceService.speak("Timer complete! ${timer.label}");
+    if (_conversationalMode) {
+      // Use speakAndContinue to resume listening after announcement
+      await _speakAndContinue("Timer complete! ${timer.label}");
+    } else {
+      await _voiceService.speak("Timer complete! ${timer.label}");
+    }
   }
 
   void _showIngredientsDrawer() {
@@ -278,6 +379,15 @@ class _CookingModeScreenState extends State<CookingModeScreen>
 
   void _confirmExit() {
     HapticFeedback.mediumImpact();
+    // Pause conversational mode while dialog is shown
+    if (_conversationalMode) {
+      _voiceService.stop();
+      _voiceService.stopListening();
+      setState(() {
+        _isSpeaking = false;
+        _isListening = false;
+      });
+    }
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
@@ -294,7 +404,13 @@ class _CookingModeScreenState extends State<CookingModeScreen>
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () {
+              Navigator.pop(context);
+              // Resume conversational mode if it was active
+              if (_conversationalMode) {
+                _restartListeningAfterDelay();
+              }
+            },
             child: Text(
               'Cancel',
               style: GoogleFonts.poppins(color: AppColors.textSecondary),
@@ -302,6 +418,7 @@ class _CookingModeScreenState extends State<CookingModeScreen>
           ),
           ElevatedButton(
             onPressed: () {
+              if (_conversationalMode) _toggleConversationalMode();
               _timerService.clearAllTimers();
               Navigator.pop(context); // Close dialog
               Navigator.pop(context); // Exit cooking mode
@@ -364,10 +481,10 @@ class _CookingModeScreenState extends State<CookingModeScreen>
                 _buildProgressBar(),
                 Expanded(child: _buildStepContent()),
                 if (_activeTimers.isNotEmpty) _buildTimersBar(),
+                if (_conversationalMode) _buildConversationalIndicator(),
                 _buildBottomControls(),
               ],
             ),
-            if (_showVoiceOverlay) _buildVoiceOverlay(),
           ],
         ),
       ),
@@ -458,9 +575,24 @@ class _CookingModeScreenState extends State<CookingModeScreen>
       controller: _pageController,
       itemCount: _session.totalSteps,
       onPageChanged: (index) {
+        // Stop any active TTS/STT on step transition
+        if (_isSpeaking) _voiceService.stop();
+        if (_isListening) _voiceService.stopListening();
+
         setState(() {
           _session = _session.goToStep(index);
+          _isSpeaking = false;
+          _isListening = false;
         });
+
+        // In conversational mode, read the new step after animation settles
+        if (_conversationalMode) {
+          Future.delayed(const Duration(milliseconds: 250), () {
+            if (mounted && _conversationalMode) {
+              _readCurrentStepConversational();
+            }
+          });
+        }
       },
       itemBuilder: (context, index) {
         final instruction = widget.recipe.instructions[index];
@@ -527,28 +659,42 @@ class _CookingModeScreenState extends State<CookingModeScreen>
             ),
           ),
           const SizedBox(width: 12),
-          // Voice/Ask button
+          // Conversational mode toggle
           Container(
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: AppColors.primary,
+              color: _conversationalMode
+                  ? AppColors.primary
+                  : AppColors.primary.withValues(alpha: 0.85),
               boxShadow: [
                 BoxShadow(
-                  color: AppColors.primary.withValues(alpha: 0.4),
-                  blurRadius: 12,
-                  spreadRadius: 2,
+                  color: AppColors.primary.withValues(
+                    alpha: _conversationalMode ? 0.6 : 0.3,
+                  ),
+                  blurRadius: _conversationalMode ? 24 : 12,
+                  spreadRadius: _conversationalMode ? 6 : 2,
                 ),
+                if (_conversationalMode)
+                  BoxShadow(
+                    color: AppColors.primary.withValues(alpha: 0.3),
+                    blurRadius: 40,
+                    spreadRadius: 8,
+                  ),
               ],
             ),
             child: IconButton(
-              onPressed: _isListening ? _stopListening : _startListening,
+              onPressed: _toggleConversationalMode,
               icon: Icon(
-                _isListening ? Icons.mic : Icons.mic_none,
+                _conversationalMode
+                    ? Icons.record_voice_over
+                    : Icons.mic_none,
                 color: Colors.white,
                 size: 28,
               ),
               padding: const EdgeInsets.all(16),
-              tooltip: 'Ask Chefsito',
+              tooltip: _conversationalMode
+                  ? 'Stop Conversational Mode'
+                  : 'Conversational Mode',
             ),
           ),
           const SizedBox(width: 12),
@@ -573,103 +719,66 @@ class _CookingModeScreenState extends State<CookingModeScreen>
     );
   }
 
-  Widget _buildVoiceOverlay() {
+  Widget _buildConversationalIndicator() {
+    String statusText;
+    IconData statusIcon;
+
+    if (_isSpeaking) {
+      statusText = 'Reading step aloud...';
+      statusIcon = Icons.volume_up;
+    } else if (_isListening) {
+      statusText = 'Listening... say "next", "back", or "stop"';
+      statusIcon = Icons.mic;
+    } else {
+      statusText = 'Conversational Mode';
+      statusIcon = Icons.record_voice_over;
+    }
+
     return Container(
-      color: Colors.black87,
-      child: Center(
-        child: Container(
-          margin: const EdgeInsets.all(32),
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: Colors.grey.shade900,
-            borderRadius: BorderRadius.circular(24),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.primary.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: AppColors.primary.withValues(alpha: 0.25),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Listening indicator
-              if (_isListening) ...[
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: AppColors.primary.withValues(alpha: 0.2),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(
-                    Icons.mic,
-                    color: AppColors.primary,
-                    size: 48,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  'Listening...',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Ask about ingredients or say "next step"',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white70,
-                    fontSize: 14,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-              // Query result
-              if (!_isListening && _voiceQuery != null) ...[
-                Icon(
-                  Icons.format_quote,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(statusIcon, color: AppColors.primary, size: 16),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                statusText,
+                style: GoogleFonts.poppins(
                   color: AppColors.primary,
-                  size: 32,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  '"$_voiceQuery"',
-                  style: GoogleFonts.poppins(
-                    color: Colors.white70,
-                    fontSize: 14,
-                    fontStyle: FontStyle.italic,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 16),
-                if (_voiceResponse != null)
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      _voiceResponse!,
-                      style: GoogleFonts.poppins(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-              ],
-              const SizedBox(height: 20),
-              TextButton(
-                onPressed: () => setState(() => _showVoiceOverlay = false),
-                child: Text(
-                  'Dismiss',
-                  style: GoogleFonts.poppins(color: Colors.white70),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 12),
+            GestureDetector(
+              onTap: _toggleConversationalMode,
+              child: Text(
+                'Stop',
+                style: GoogleFonts.poppins(
+                  color: Colors.white54,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
+
 }
 
 /// Dialog shown when finishing cooking

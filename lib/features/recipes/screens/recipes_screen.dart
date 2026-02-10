@@ -1,10 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../../../core/models/recipe_model.dart';
 import '../../../core/services/spoonacular_service.dart';
 import '../../../core/theme/app_colors.dart';
-import '../../scan/screens/recipe_results_screen.dart' show RecipeDetailScreen, StringExtension;
+import '../../scan/screens/recipe_results_screen.dart' show RecipeDetailScreen;
 
 /// Recipe browsing screen with search and categories
 class RecipesScreen extends StatefulWidget {
@@ -20,6 +22,7 @@ class _RecipesScreenState extends State<RecipesScreen> {
   final _searchController = TextEditingController();
   final _spoonacularService = SpoonacularService();
   final _scrollController = ScrollController();
+  Timer? _debounceTimer;
 
   // Category data
   static const List<_RecipeCategory> _categories = [
@@ -89,6 +92,7 @@ class _RecipesScreenState extends State<RecipesScreen> {
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _searchController.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -143,11 +147,9 @@ class _RecipesScreenState extends State<RecipesScreen> {
     });
 
     try {
-      // Use random recipes with search term as tag for now
-      // In a real app, you'd use a dedicated search endpoint
-      final results = await _spoonacularService.getPopularRecipes(
+      final results = await _spoonacularService.searchRecipes(
+        query: query,
         count: 12,
-        tags: query.toLowerCase(),
       );
 
       if (mounted && _searchQuery == query) {
@@ -197,19 +199,22 @@ class _RecipesScreenState extends State<RecipesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(),
-            _buildSearchBar(),
-            Expanded(
-              child: _searchQuery.isNotEmpty
-                  ? _buildSearchResults()
-                  : _buildCategoryList(),
-            ),
-          ],
+    return GestureDetector(
+      onTap: () => FocusScope.of(context).unfocus(),
+      child: Scaffold(
+        backgroundColor: Colors.white,
+        body: SafeArea(
+          child: Column(
+            children: [
+              _buildHeader(),
+              _buildSearchBar(),
+              Expanded(
+                child: _searchQuery.isNotEmpty
+                    ? _buildSearchResults()
+                    : _buildCategoryList(),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -273,13 +278,21 @@ class _RecipesScreenState extends State<RecipesScreen> {
           ),
           onChanged: (value) {
             setState(() {});
-            if (value.length >= 2) {
-              _performSearch(value);
-            } else if (value.isEmpty) {
+            _debounceTimer?.cancel();
+            if (value.isEmpty) {
               _clearSearch();
+            } else if (value.length >= 3) {
+              _debounceTimer = Timer(const Duration(milliseconds: 500), () {
+                _performSearch(value);
+              });
             }
           },
-          onSubmitted: _performSearch,
+          onSubmitted: (value) {
+            _debounceTimer?.cancel();
+            if (value.trim().isNotEmpty) {
+              _performSearch(value);
+            }
+          },
           textInputAction: TextInputAction.search,
         ),
       ),
@@ -574,9 +587,9 @@ class _RecipeCard extends StatelessWidget {
             ),
             // Content
             Expanded(
-              flex: 2,
+              flex: 3,
               child: Padding(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(10),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -592,6 +605,26 @@ class _RecipeCard extends StatelessWidget {
                       ),
                     ),
                     const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 6,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _getDifficultyColor(recipe.normalizedDifficulty)
+                                .withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            recipe.difficultyLabel,
+                            style: GoogleFonts.poppins(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w500,
+                              color: _getDifficultyColor(recipe.normalizedDifficulty),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
                     Row(
                       children: [
                         Icon(
@@ -605,26 +638,6 @@ class _RecipeCard extends StatelessWidget {
                           style: GoogleFonts.poppins(
                             fontSize: 11,
                             color: AppColors.textSecondary,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _getDifficultyColor(recipe.difficulty)
-                                .withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            recipe.difficulty.capitalize(),
-                            style: GoogleFonts.poppins(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w500,
-                              color: _getDifficultyColor(recipe.difficulty),
-                            ),
                           ),
                         ),
                       ],
@@ -654,12 +667,12 @@ class _RecipeCard extends StatelessWidget {
 
   Color _getDifficultyColor(String difficulty) {
     switch (difficulty.toLowerCase()) {
-      case 'easy':
-        return AppColors.success;
-      case 'medium':
-        return AppColors.warning;
-      case 'hard':
-        return AppColors.error;
+      case 'beginner':
+        return const Color(0xFF4A9BD9); // Calm blue -- inviting
+      case 'intermediate':
+        return AppColors.primary;       // App green -- positive
+      case 'advanced':
+        return const Color(0xFF8B5CF6); // Vibrant purple -- exciting
       default:
         return AppColors.textSecondary;
     }
@@ -702,9 +715,9 @@ class _RecipeCardSkeleton extends StatelessWidget {
             ),
           ),
           Expanded(
-            flex: 2,
+            flex: 3,
             child: Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

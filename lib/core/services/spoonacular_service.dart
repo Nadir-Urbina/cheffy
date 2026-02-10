@@ -249,16 +249,13 @@ class SpoonacularService {
       );
     }
 
-    // Determine difficulty based on ready time and number of steps
+    // Determine difficulty based on time, steps, and ingredient count
     final readyInMinutes = json['readyInMinutes'] ?? 30;
-    String difficulty;
-    if (readyInMinutes <= 20 && instructions.length <= 5) {
-      difficulty = 'easy';
-    } else if (readyInMinutes <= 45 && instructions.length <= 10) {
-      difficulty = 'medium';
-    } else {
-      difficulty = 'hard';
-    }
+    final difficulty = _calculateDifficulty(
+      readyInMinutes: readyInMinutes,
+      stepCount: instructions.length,
+      ingredientCount: ingredients.length,
+    );
 
     // Extract cuisine type
     final cuisines = json['cuisines'] as List<dynamic>? ?? [];
@@ -287,6 +284,8 @@ class SpoonacularService {
       missingIngredients: missingIngredientNames,
       imageUrl: _getHighResImageUrl(json['image']),
       nutrition: nutrition,
+      sourceUrl: json['sourceUrl'],
+      sourceName: json['sourceName'] ?? json['creditsText'],
     );
   }
 
@@ -443,6 +442,28 @@ class SpoonacularService {
     return cleanUrl;
   }
 
+  /// Calculate recipe difficulty based on a weighted score of time, steps, and ingredients.
+  ///
+  /// Score formula:
+  ///   - Time: readyInMinutes (weighted 1x)
+  ///   - Steps: instruction count * 3 (weighted heavily -- more steps = more complex)
+  ///   - Ingredients: ingredient count * 2 (more ingredients = more prep work)
+  ///
+  /// Thresholds:
+  ///   - Beginner: score <= 40  (e.g., 20 min + 4 steps + 5 ingredients = 20+12+10 = 42 → intermediate)
+  ///   - Intermediate: score <= 75
+  ///   - Advanced: score > 75
+  static String _calculateDifficulty({
+    required int readyInMinutes,
+    required int stepCount,
+    required int ingredientCount,
+  }) {
+    final score = readyInMinutes + (stepCount * 3) + (ingredientCount * 2);
+    if (score <= 40) return 'beginner';
+    if (score <= 75) return 'intermediate';
+    return 'advanced';
+  }
+
   /// Get random/popular recipes for home screen display
   /// Returns recipes with real imagery
   /// Optional [tags] parameter for filtering (e.g., 'breakfast', 'lunch', 'dinner', 'dessert', 'appetizer', 'salad', 'soup')
@@ -507,16 +528,13 @@ class SpoonacularService {
           );
         }).toList();
 
-        // Determine difficulty
+        // Determine difficulty based on time, steps, and ingredient count
         final readyInMinutes = json['readyInMinutes'] ?? 30;
-        String difficulty;
-        if (readyInMinutes <= 20 && instructions.length <= 5) {
-          difficulty = 'easy';
-        } else if (readyInMinutes <= 45 && instructions.length <= 10) {
-          difficulty = 'medium';
-        } else {
-          difficulty = 'hard';
-        }
+        final difficulty = _calculateDifficulty(
+          readyInMinutes: readyInMinutes,
+          stepCount: instructions.length,
+          ingredientCount: ingredients.length,
+        );
 
         // Extract cuisine type
         final cuisines = json['cuisines'] as List<dynamic>? ?? [];
@@ -538,6 +556,8 @@ class SpoonacularService {
           matchPercentage: 0, // N/A for popular recipes
           missingIngredients: [],
           imageUrl: _getHighResImageUrl(json['image']),
+          sourceUrl: json['sourceUrl'],
+          sourceName: json['sourceName'] ?? json['creditsText'],
         );
       }).toList();
       
@@ -549,6 +569,135 @@ class SpoonacularService {
       debugPrint('Error fetching popular recipes: $e');
       return [];
     }
+  }
+
+  /// Search recipes by free-text query using complexSearch endpoint
+  /// Returns real, verified recipes matching the search term
+  /// Uses a fallback strategy: first tries with instructionsRequired=true,
+  /// and if no results are found, retries without the filter.
+  Future<List<Recipe>> searchRecipes({
+    required String query,
+    int count = 12,
+  }) async {
+    try {
+      // First attempt: prefer recipes with instructions (better for cooking mode)
+      var results = await _searchRecipesRaw(
+        query: query,
+        count: count,
+        instructionsRequired: true,
+      );
+
+      // Fallback: if no results, retry without the instructions filter
+      if (results.isEmpty) {
+        debugPrint('🔄 No results with instructions filter, retrying without...');
+        results = await _searchRecipesRaw(
+          query: query,
+          count: count,
+          instructionsRequired: false,
+        );
+      }
+
+      return results;
+    } catch (e) {
+      debugPrint('Error searching recipes: $e');
+      return [];
+    }
+  }
+
+  /// Raw search call to Spoonacular complexSearch endpoint
+  Future<List<Recipe>> _searchRecipesRaw({
+    required String query,
+    required int count,
+    required bool instructionsRequired,
+  }) async {
+    final searchUrl = Uri.parse(
+      '$_baseUrl/recipes/complexSearch'
+      '?apiKey=$_apiKey'
+      '&query=${Uri.encodeComponent(query)}'
+      '&number=$count'
+      '&addRecipeInformation=true'
+      '&fillIngredients=true'
+      '${instructionsRequired ? '&instructionsRequired=true' : ''}',
+    );
+
+    debugPrint('🔍 Searching recipes for: "$query" (instructionsRequired: $instructionsRequired)');
+
+    final response = await http.get(searchUrl);
+
+    if (response.statusCode != 200) {
+      throw Exception('Spoonacular API error: ${response.statusCode}');
+    }
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final resultsJson = data['results'] as List<dynamic>? ?? [];
+
+    if (resultsJson.isEmpty) {
+      debugPrint('No search results for "$query" (instructionsRequired: $instructionsRequired)');
+      return [];
+    }
+
+      final recipes = resultsJson.map((json) {
+        // Parse instructions
+        final analyzedInstructions =
+            json['analyzedInstructions'] as List<dynamic>? ?? [];
+        final instructions = <String>[];
+
+        for (final section in analyzedInstructions) {
+          final steps = section['steps'] as List<dynamic>? ?? [];
+          for (final step in steps) {
+            instructions.add(step['step'] ?? '');
+          }
+        }
+
+        // Parse ingredients
+        final extendedIngredients =
+            json['extendedIngredients'] as List<dynamic>? ?? [];
+        final ingredients = extendedIngredients.map((ing) {
+          return RecipeIngredient(
+            name: ing['name'] ?? '',
+            quantity: (ing['amount'] ?? 0).toDouble(),
+            unit: ing['unit'] ?? '',
+            isOptional: false,
+            isAvailable: false,
+          );
+        }).toList();
+
+        // Determine difficulty based on time, steps, and ingredient count
+        final readyInMinutes = json['readyInMinutes'] ?? 30;
+        final difficulty = _calculateDifficulty(
+          readyInMinutes: readyInMinutes,
+          stepCount: instructions.length,
+          ingredientCount: ingredients.length,
+        );
+
+        // Extract cuisine type
+        final cuisines = json['cuisines'] as List<dynamic>? ?? [];
+        final cuisineType = cuisines.isNotEmpty
+            ? cuisines.first.toString().toLowerCase()
+            : 'other';
+
+        return Recipe(
+          id: json['id'].toString(),
+          name: json['title'] ?? 'Unnamed Recipe',
+          description: _cleanHtml(json['summary'] ?? ''),
+          cuisineType: cuisineType,
+          prepTimeMinutes: json['preparationMinutes'] ?? 0,
+          cookTimeMinutes:
+              json['cookingMinutes'] ?? (json['readyInMinutes'] ?? 30),
+          difficulty: difficulty,
+          servings: json['servings'] ?? 4,
+          ingredients: ingredients,
+          instructions: instructions,
+          matchPercentage: 0,
+          missingIngredients: [],
+          imageUrl: _getHighResImageUrl(json['image']),
+          sourceUrl: json['sourceUrl'],
+          sourceName: json['sourceName'] ?? json['creditsText'],
+        );
+      }).toList();
+
+      debugPrint('✅ Found ${recipes.length} recipes for "$query"');
+      return recipes;
   }
 
   /// Get recipe by ID (for detailed view)
@@ -597,5 +746,7 @@ class _RecipeWithScore extends Recipe {
     missingIngredients: recipe.missingIngredients,
     imageUrl: recipe.imageUrl,
     nutrition: recipe.nutrition,
+    sourceUrl: recipe.sourceUrl,
+    sourceName: recipe.sourceName,
   );
 }

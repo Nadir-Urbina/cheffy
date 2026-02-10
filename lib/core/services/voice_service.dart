@@ -68,6 +68,7 @@ class VoiceService {
   
   // Callbacks
   Function(String)? onSpeechResult;
+  Function(String)? onPartialSpeechResult;
   Function()? onSpeechStart;
   Function()? onSpeechEnd;
   Function(String)? onTtsStart;
@@ -185,7 +186,21 @@ class VoiceService {
         
         if (audioFile != null) {
           await _audioPlayer.setFilePath(audioFile.path);
-          await _audioPlayer.play();
+
+          // Subscribe BEFORE playing so we catch the completion event
+          final playbackDone = Completer<void>();
+          late StreamSubscription<PlayerState> subscription;
+          subscription = _audioPlayer.playerStateStream.listen((state) {
+            if (!playbackDone.isCompleted &&
+                (state.processingState == ProcessingState.completed ||
+                 state.processingState == ProcessingState.idle)) {
+              playbackDone.complete();
+              subscription.cancel();
+            }
+          });
+
+          _audioPlayer.play(); // Start playback (don't await — it returns early)
+          await playbackDone.future; // Block until audio truly finishes
         } else {
           throw Exception('Failed to save audio file');
         }
@@ -281,6 +296,7 @@ class VoiceService {
   Future<void> startListening({
     Duration? listenFor,
     Duration? pauseFor,
+    ListenMode listenMode = ListenMode.dictation,
   }) async {
     if (!_sttInitialized) {
       await _initStt();
@@ -310,12 +326,21 @@ class VoiceService {
         pauseFor: pauseFor ?? const Duration(seconds: 5),
         partialResults: true,
         cancelOnError: false,
-        listenMode: ListenMode.dictation,
+        listenMode: listenMode,
       );
     } catch (e) {
       _isListening = false;
       onError?.call('Failed to start listening: $e');
     }
+  }
+
+  /// Start listening optimized for quick voice commands.
+  /// Uses shorter pause duration and confirmation mode for faster response.
+  Future<void> startListeningForCommands() async {
+    await startListening(
+      pauseFor: const Duration(seconds: 2),
+      listenMode: ListenMode.confirmation,
+    );
   }
 
   /// Stop listening
@@ -338,6 +363,9 @@ class VoiceService {
   void _onSpeechResult(SpeechRecognitionResult result) {
     if (result.finalResult) {
       onSpeechResult?.call(result.recognizedWords);
+    } else {
+      // Emit partial results for fast command matching
+      onPartialSpeechResult?.call(result.recognizedWords);
     }
   }
 
