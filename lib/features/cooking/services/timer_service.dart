@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'package:audioplayers/audioplayers.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import '../models/cooking_session.dart';
 
@@ -10,7 +8,6 @@ class TimerService {
   factory TimerService() => _instance;
   TimerService._internal();
 
-  final AudioPlayer _audioPlayer = AudioPlayer();
   Timer? _tickTimer;
   
   final _timersController = StreamController<List<CookingTimer>>.broadcast();
@@ -55,20 +52,11 @@ class TimerService {
 
   /// Called when a timer completes
   Future<void> _onTimerComplete() async {
-    // Haptic feedback
+    // Strong haptic pattern to alert the user
     HapticFeedback.heavyImpact();
-    
-    // Play system sound
-    try {
-      await _audioPlayer.play(AssetSource('audio/timer_complete.mp3'));
-    } catch (e) {
-      // Fallback: use a URL-based sound or system sound
-      debugPrint('Timer sound error: $e');
-      // Multiple haptic feedbacks as fallback
-      for (int i = 0; i < 3; i++) {
-        await Future.delayed(const Duration(milliseconds: 200));
-        HapticFeedback.heavyImpact();
-      }
+    for (int i = 0; i < 3; i++) {
+      await Future.delayed(const Duration(milliseconds: 200));
+      HapticFeedback.heavyImpact();
     }
   }
 
@@ -225,7 +213,6 @@ class TimerService {
   void dispose() {
     _tickTimer?.cancel();
     _timersController.close();
-    _audioPlayer.dispose();
   }
 }
 

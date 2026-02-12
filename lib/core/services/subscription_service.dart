@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 
@@ -13,11 +14,21 @@ class SubscriptionService {
 
   static const String _entitlementId = 'My Chefsito Pro';
 
+  // Demo override — these emails always get premium access
+  static const List<String> _premiumOverrideEmails = [
+    'nurbinabr@gmail.com',
+  ];
+
   bool _initialized = false;
   bool _isPremium = false;
 
   /// Whether the user has an active premium subscription.
-  bool get isPremium => _isPremium;
+  bool get isPremium {
+    if (_isPremium) return true;
+    // Check demo override
+    final email = FirebaseAuth.instance.currentUser?.email?.toLowerCase();
+    return email != null && _premiumOverrideEmails.contains(email);
+  }
 
   /// Initialize RevenueCat SDK. Call once at app start.
   Future<void> initialize() async {

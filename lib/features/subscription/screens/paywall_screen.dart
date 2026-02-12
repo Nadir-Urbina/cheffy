@@ -129,6 +129,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
+        top: false,
         child: _isLoading
             ? const Center(child: CircularProgressIndicator())
             : SingleChildScrollView(
@@ -155,11 +156,12 @@ class _PaywallScreenState extends State<PaywallScreen> {
   }
 
   Widget _buildHeader() {
+    final topPadding = MediaQuery.of(context).padding.top;
     return Stack(
       children: [
         Container(
           width: double.infinity,
-          padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+          padding: EdgeInsets.fromLTRB(24, topPadding + 16, 24, 32),
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft,
@@ -207,7 +209,7 @@ class _PaywallScreenState extends State<PaywallScreen> {
         ),
         // Close button
         Positioned(
-          top: 8,
+          top: topPadding + 8,
           right: 12,
           child: IconButton(
             onPressed: () => Navigator.pop(context, false),

@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/models/recipe_model.dart';
 import '../../../core/services/ai_service.dart';
 import '../../../core/services/instacart_service.dart';
+import '../../../core/services/meal_planning_service.dart';
 import '../../../core/services/preferences_service.dart';
 import '../../../core/services/recipe_history_service.dart';
 import '../../../core/theme/app_colors.dart';
@@ -739,10 +740,12 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
   final _instacartService = InstacartService();
   final _preferencesService = PreferencesService();
   final _historyService = RecipeHistoryService();
+  final _mealPlanningService = MealPlanningService();
   final _aiService = AIService();
   bool _isLoadingInstacart = false;
   String? _preferredRetailerName;
   int _timesCooked = 0;
+  bool _isScheduled = false;
 
   // AI-generated instructions state
   List<String> _generatedInstructions = [];
@@ -760,6 +763,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     super.initState();
     _loadPreferredRetailer();
     _loadTimesCooked();
+    _checkIfScheduled();
     _generateInstructionsIfNeeded();
   }
 
@@ -804,9 +808,23 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     }
   }
 
+  Future<void> _checkIfScheduled() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final scheduled = await _mealPlanningService.isRecipeScheduled(
+      user.uid,
+      recipe.id,
+    );
+    if (mounted) {
+      setState(() => _isScheduled = scheduled);
+    }
+  }
+
   Future<void> _scheduleMeal() async {
     HapticFeedback.mediumImpact();
     await ScheduleMealSheet.show(context, recipe);
+    _checkIfScheduled();
   }
 
   Future<void> _loadPreferredRetailer() async {
@@ -1281,7 +1299,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                   child: Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: _isScheduled ? AppColors.primary : Colors.white,
                       shape: BoxShape.circle,
                       boxShadow: [
                         BoxShadow(
@@ -1290,10 +1308,10 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                         ),
                       ],
                     ),
-                    child: const Icon(
-                      Icons.calendar_month,
+                    child: Icon(
+                      _isScheduled ? Icons.event_available : Icons.calendar_month,
                       size: 20,
-                      color: AppColors.textPrimary,
+                      color: _isScheduled ? Colors.white : AppColors.textPrimary,
                     ),
                   ),
                 ),

@@ -177,6 +177,28 @@ class MealPlanningService {
     }
   }
 
+  /// Check if a recipe has any upcoming scheduled meals
+  Future<bool> isRecipeScheduled(String odUserId, String recipeId) async {
+    try {
+      final now = DateTime.now();
+      final startOfToday = DateTime(now.year, now.month, now.day);
+
+      final snapshot = await _scheduledMealsCollection
+          .where('odUserId', isEqualTo: odUserId)
+          .where('scheduledDate', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfToday))
+          .get();
+
+      return snapshot.docs.any((doc) {
+        final data = doc.data();
+        final recipeData = data['recipe'] as Map<String, dynamic>?;
+        return recipeData?['id']?.toString() == recipeId;
+      });
+    } catch (e) {
+      debugPrint('❌ Error checking recipe schedule: $e');
+      return false;
+    }
+  }
+
   /// Check if a recipe is already scheduled for a specific date
   Future<bool> isRecipeScheduledForDate(
     String odUserId,

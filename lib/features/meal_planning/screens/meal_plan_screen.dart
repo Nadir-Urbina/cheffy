@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -24,47 +26,57 @@ class _MealPlanScreenState extends State<MealPlanScreen> {
   List<ScheduledMeal> _allMeals = [];
   Set<DateTime> _scheduledDates = {};
   bool _isLoading = true;
+  StreamSubscription<List<ScheduledMeal>>? _mealsSubscription;
 
   @override
   void initState() {
     super.initState();
-    _loadMeals();
+    _subscribeMeals();
   }
 
-  Future<void> _loadMeals() async {
+  @override
+  void dispose() {
+    _mealsSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _subscribeMeals() {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
     setState(() => _isLoading = true);
 
-    try {
-      // Load meals for the current month view (with buffer for prev/next month days shown)
-      final startOfMonth = DateTime(_focusedMonth.year, _focusedMonth.month - 1, 1);
-      final endOfMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 2, 0);
+    _mealsSubscription?.cancel();
 
-      final meals = await _mealPlanningService.getScheduledMeals(
-        user.uid,
-        startDate: startOfMonth,
-        endDate: endOfMonth,
-      );
+    final startOfMonth = DateTime(_focusedMonth.year, _focusedMonth.month - 1, 1);
+    final endOfMonth = DateTime(_focusedMonth.year, _focusedMonth.month + 2, 0);
 
-      final scheduledDates = await _mealPlanningService.getScheduledDates(
-        user.uid,
-        month: _focusedMonth,
-      );
-
+    _mealsSubscription = _mealPlanningService.scheduledMealsStream(
+      user.uid,
+      startDate: startOfMonth,
+      endDate: endOfMonth,
+    ).listen((meals) {
       if (mounted) {
+        final scheduledDates = <DateTime>{};
+        for (final meal in meals) {
+          scheduledDates.add(DateTime(
+            meal.scheduledDate.year,
+            meal.scheduledDate.month,
+            meal.scheduledDate.day,
+          ));
+        }
         setState(() {
           _allMeals = meals;
           _scheduledDates = scheduledDates;
           _isLoading = false;
         });
       }
-    } catch (e) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
+    });
+  }
+
+  /// Re-subscribe when changing months
+  void _loadMeals() {
+    _subscribeMeals();
   }
 
   List<ScheduledMeal> get _mealsForSelectedDate {

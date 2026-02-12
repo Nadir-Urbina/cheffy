@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/models/recipe_model.dart';
 import '../../../core/models/video_recipe_models.dart';
 import '../../../core/services/instacart_service.dart';
+import '../../../core/services/meal_planning_service.dart';
 import '../../../core/services/preferences_service.dart';
 import '../../../core/services/recipe_history_service.dart';
 import '../../../core/theme/app_colors.dart';
@@ -29,9 +30,11 @@ class _VideoRecipeResultScreenState extends State<VideoRecipeResultScreen> {
   final _instacartService = InstacartService();
   final _preferencesService = PreferencesService();
   final _historyService = RecipeHistoryService();
+  final _mealPlanningService = MealPlanningService();
   bool _isLoadingInstacart = false;
   String? _preferredRetailerName;
   int _timesCooked = 0;
+  bool _isScheduled = false;
 
   VideoRecipeResult get result => widget.result;
   Recipe get recipe => result.recipe!;
@@ -42,6 +45,7 @@ class _VideoRecipeResultScreenState extends State<VideoRecipeResultScreen> {
     super.initState();
     _loadPreferredRetailer();
     _loadTimesCooked();
+    _checkIfScheduled();
   }
 
   Future<void> _loadTimesCooked() async {
@@ -54,9 +58,23 @@ class _VideoRecipeResultScreenState extends State<VideoRecipeResultScreen> {
     }
   }
 
+  Future<void> _checkIfScheduled() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final scheduled = await _mealPlanningService.isRecipeScheduled(
+      user.uid,
+      recipe.id,
+    );
+    if (mounted) {
+      setState(() => _isScheduled = scheduled);
+    }
+  }
+
   Future<void> _scheduleMeal() async {
     HapticFeedback.mediumImpact();
     await ScheduleMealSheet.show(context, recipe);
+    _checkIfScheduled();
   }
 
   Future<void> _loadPreferredRetailer() async {
@@ -182,7 +200,7 @@ class _VideoRecipeResultScreenState extends State<VideoRecipeResultScreen> {
                 icon: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.white,
+                    color: _isScheduled ? AppColors.primary : Colors.white,
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
@@ -191,8 +209,11 @@ class _VideoRecipeResultScreenState extends State<VideoRecipeResultScreen> {
                       ),
                     ],
                   ),
-                  child: const Icon(Icons.calendar_month,
-                      size: 18, color: AppColors.textPrimary),
+                  child: Icon(
+                    _isScheduled ? Icons.event_available : Icons.calendar_month,
+                    size: 18,
+                    color: _isScheduled ? Colors.white : AppColors.textPrimary,
+                  ),
                 ),
                 onPressed: _scheduleMeal,
               ),

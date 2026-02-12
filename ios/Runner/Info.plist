@@ -58,6 +58,8 @@
 	<!-- Location Permission for finding nearby stores -->
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>My Chefsito uses your location to find grocery stores near you for convenient ingredient shopping.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>My Chefsito uses your location to find grocery stores near you for convenient ingredient shopping.</string>
 	<!-- Google Sign-In URL Scheme -->
 	<key>CFBundleURLTypes</key>
 	<array>
