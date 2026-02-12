@@ -102,7 +102,7 @@ async function deleteUserDataCompletely(userId) {
 async function deleteUserScheduledMeals(db, userId) {
   try {
     const mealsSnapshot = await db.collection("scheduled_meals")
-        .where("userId", "==", userId)
+        .where("odUserId", "==", userId)
         .get();
 
     if (mealsSnapshot.empty) {
@@ -140,7 +140,7 @@ async function deleteUserScheduledMeals(db, userId) {
 async function deleteUserCookedRecipes(db, userId) {
   try {
     const recipesSnapshot = await db.collection("cooked_recipes")
-        .where("userId", "==", userId)
+        .where("odUserId", "==", userId)
         .get();
 
     if (recipesSnapshot.empty) {
